@@ -369,7 +369,7 @@ impl VcdReader {
         let header = parser.parse_header()?;
         // println!("{:#?}", header);
         let mut clock_path = extra_scopes.clone();
-        clock_path.push("clock".into());
+        clock_path.push("clk".into());
 
         let mut reset_path = extra_scopes.clone();
         reset_path.push("reset".into());
