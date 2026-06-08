@@ -175,9 +175,9 @@ impl TywavesInterface {
             node_map.entry(node.timestamp).or_default().push(node);
         }
 
-        let top_path: Vec<String> = vec!["TOP".into(), "svsimTestbench".into(), "dut".into()];
+        let top_path: Vec<String> = vec!["TOP".into()];
 
-        let clock = header.find_var(&["TOP", "svsimTestbench", "dut", "clock"]).ok_or(Error::ClockNotFoundError)?.code;
+        let clock = header.find_var(&["TOP", "clk"]).ok_or(Error::ClockNotFoundError)?.code;
         
         // The rewritten VCD is a bit weird. It's best to squash all the changes (keep only the last one) for each timestep
         // (needs hashmap). Then on the timestamp after a clock cycle, update the global hashmap and add the values to the nodes

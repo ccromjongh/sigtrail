@@ -75,9 +75,9 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
             // Add simulation data
             let tywaves = TywavesInterface::new(&pdg_config.hgldd_path, pdg_config.extra_scopes.clone(), &pdg_config.top_module)?;
         
-            let tywaves_vcd_path = tywaves.vcd_rewrite(&pdg_config.vcd_path)?;
+            // let tywaves_vcd_path = tywaves.vcd_rewrite(&pdg_config.vcd_path)?;
             println!("VCD rewrite done");
-            tywaves.inject_sim_data(&mut converted_pdg, &tywaves_vcd_path)?;
+            tywaves.inject_sim_data(&mut converted_pdg, &pdg_config.vcd_path)?;
 
             println!("Tywaves: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
 
