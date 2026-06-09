@@ -7,13 +7,30 @@ use anyhow::{anyhow, Result};
 
 use crate::{app_state::{AppState, GraphNodeHierarchy, HierarchicalGraph, ViewableGraph}, errors::map_err_to_string_async};
 
+/// Tauri command that builds a Dynamic Program Dependence Graph (DPDG) from PDG and VCD files.
+///
+/// This function orchestrates the entire DPDG building process:
+/// 1. Loads and deserializes the PDG from file
+/// 2. Builds the DPDG using VCD simulation data
+/// 3. Converts to source representation (if configured)
+/// 4. Injects simulation data from VCD
+/// 5. Builds node hierarchy for grouping (if enabled)
+/// 6. Creates lookup tables for efficient graph traversal
+/// 7. Loads source files for display
+///
+/// # Arguments
+/// * `state` - Shared application state containing configuration and graph data
+///
+/// # Returns
+/// * `Ok(())` if graph building succeeds
+/// * `Err(String)` with error message if any step fails
 #[tauri::command]
 pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String> {
     map_err_to_string_async(async {
         let mut enable_grouping = false;
         {
+            // Extract PDG configuration from state without holding lock during graph building
             let pdg_config = {
-                // Prevent global state lock during graph building.
                 let state_guard = state.read().map_err(|_| anyhow::anyhow!("RwLock poisoned"))?;
                 state_guard.pdg_config.clone()
             };
@@ -23,15 +40,14 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
             };
 
             enable_grouping = pdg_config.group_nodes;
-            
-            // for _ in 0..100 {
+
             let start_time = SystemTime::now();
             let mut now = SystemTime::now();
-            let reader = BufReader::new(File::open(&pdg_config.pdg_path)?);
 
+            // Load and deserialize PDG from JSON file
+            let reader = BufReader::new(File::open(&pdg_config.pdg_path)?);
             let mut deser = serde_json::Deserializer::from_reader(reader);
             deser.disable_recursion_limit();
-            //serde_json::from_str::<PDGSpec>(buf.as_str())?;
             let pdg_raw = PDGSpec::deserialize(&mut deser)?;
             println!("Processing PDG with {} nodes and {} edges", pdg_raw.vertices.len(), pdg_raw.edges.len());
             let sliced = pdg_raw;
@@ -41,12 +57,9 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
 
             println!("Read PDG from file");
 
-            // First do a static slice to try to reduce the amount of analyzed nodes
-            // let sliced = pdg_slice(pdg_raw, &pdg_config.criterion)?;
-
-            // Build the DPDG
+            // Build the Dynamic PDG by analyzing simulation trace data
             let mut builder = GraphBuilder::new(&pdg_config.vcd_path, pdg_config.extra_scopes.clone(), sliced)?;
-            let processing_type = if pdg_config.data_only { GraphProcessingType::DataOnly } else {GraphProcessingType::Normal };
+            let processing_type = if pdg_config.data_only { GraphProcessingType::DataOnly } else { GraphProcessingType::Normal };
             let dpdg = builder.process(&pdg_config.criterion, pdg_config.max_timesteps.map(|t| t as i64), processing_type)?;
 
             println!("DPDG build: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
@@ -59,9 +72,9 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
             now = SystemTime::now();
             println!("Made DPDG exportable");
 
-            // Convert to source language
+            // Convert from FIRRTL to source language representation unless FIR mode is enabled
             let mut converted_pdg = if !pdg_config.fir_repr {
-                 pdg_convert_to_source(dpdg, false, true)
+                pdg_convert_to_source(dpdg, false, true)
             } else {
                 dpdg
             };
@@ -69,44 +82,46 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
             println!("Conversion: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
             now = SystemTime::now();
             println!("Converted to source representation");
-            
+
             println!("DPDG has {} nodes and {} edges", converted_pdg.vertices.len(), converted_pdg.edges.len());
 
-            // Add simulation data
+            // Inject simulation values into graph nodes using Tywaves
             let tywaves = TywavesInterface::new(&pdg_config.hgldd_path, pdg_config.extra_scopes.clone(), &pdg_config.top_module)?;
-        
-            // let tywaves_vcd_path = tywaves.vcd_rewrite(&pdg_config.vcd_path)?;
             println!("VCD rewrite done");
             tywaves.inject_sim_data(&mut converted_pdg, &pdg_config.vcd_path)?;
 
             println!("Tywaves: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
 
+            // Adjust timestamps (convert from 0-indexed to 1-indexed)
             for v in &mut converted_pdg.vertices {
                 v.timestamp += 1;
             }
 
             println!("Total: {}", (start_time.elapsed().unwrap().as_nanos() as f64) / 1e6);
 
-            //let converted_pdg = dpdg;
-
             println!("Data injection done");
 
+            // Build hierarchical grouping structure if enabled
             let (node_hierarchy, node_hierarchy_lookup) = if pdg_config.group_nodes {
                 let (x, y) = build_node_hierarchy(&converted_pdg);
                 (Some(x), Some(y))
             } else { (None, None) };
 
-            // Create maps to speed up the viewer
+            // Build lookup tables for efficient graph queries
+
+            // Map timestamp -> node indices at that timestamp
             let mut time_to_nodes = HashMap::new();
             for (idx, v) in converted_pdg.vertices.iter().enumerate() {
                 time_to_nodes.entry(v.timestamp).and_modify(|nodes: &mut Vec<usize>| nodes.push(idx)).or_insert(vec![idx]);
             }
 
+            // Map node index -> outgoing edge indices (dependencies)
             let mut dep_to_edges = HashMap::new();
             for (idx, e) in converted_pdg.edges.iter().enumerate() {
                 dep_to_edges.entry(e.from).and_modify(|edges: &mut Vec<usize>| edges.push(idx)).or_insert(vec![idx]);
             }
 
+            // Map node index -> incoming edge indices (provenance)
             let mut prov_to_edges = HashMap::new();
             for (idx, e) in converted_pdg.edges.iter().enumerate() {
                 prov_to_edges.entry(e.to).and_modify(|edges: &mut Vec<usize>| edges.push(idx)).or_insert(vec![idx]);
@@ -114,18 +129,17 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
 
             let n_timestamps = converted_pdg.vertices.iter().fold(0, |acc, x| acc.max(x.timestamp)) as u64;
 
-            // Find unique source files
+            // Load source files referenced by graph nodes for display in UI
+            // All file contents are loaded in memory
             let mut source_paths = HashSet::new();
             for v in &converted_pdg.vertices {
                 source_paths.insert(v.file.clone());
             }
 
-            // Just read them all to memory, then can't be that big
             let mut source_files = HashMap::new();
             for p in source_paths {
-                // This is a hacky fix that appends the root symbol / if the file is in the home directory.
-                // For some reason, the exported PDG does not contain this symbol.
-                // This will not work on windows.
+                // Workaround: PDG export may be missing leading '/' for home directory paths
+                // TODO: This is Unix-specific and won't work on Windows
                 let read_path = if p.starts_with("home") {
                     &("/".to_string() + &p)
                 } else {
@@ -148,21 +162,35 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
                 should_group_nodes: pdg_config.group_nodes,
                 node_hierarchy,
                 node_hierarchy_lookup,
-                current_hier_dpdg: None
+                current_hier_dpdg: None,
             };
 
             let mut state_guard = state.write().map_err(|_| anyhow::anyhow!("RwLock poisoned"))?;
             state_guard.graph = Some(viewable_graph);
-        } // Lock contention countermeasure
-        // }
+        }
+
+        // Build initial hierarchical view if grouping is enabled
         if enable_grouping {
             rebuild_hier_graph(&state)?;
         }
         Ok(())
     }).await
 }
- 
-/// Rebuilds the DPDG that is currently being displayed based on the hierarchical levels that are expanded.
+
+/// Rebuilds the hierarchical DPDG view based on which hierarchical groups are expanded/collapsed.
+///
+/// This function traverses all edges in the original DPDG and for each edge:
+/// 1. Determines the highest collapsed hierarchical group for source and destination nodes
+/// 2. Redirects edges to group nodes when their children are collapsed
+/// 3. Deduplicates edges that now connect the same groups
+/// 4. Rebuilds lookup tables for the new graph structure
+///
+/// # Arguments
+/// * `state` - Shared application state containing the graph and hierarchy data
+///
+/// # Returns
+/// * `Ok(())` if rebuild succeeds
+/// * `Err` if state is uninitialized or lock is poisoned
 pub fn rebuild_hier_graph(state: &State<'_, RwLock<AppState>>) -> Result<()> {
     let mut state_guard = state.write().map_err(|_| anyhow!("RwLock poisoned"))?;
     let Some(vgraph) = &mut state_guard.graph else {
@@ -174,68 +202,69 @@ pub fn rebuild_hier_graph(state: &State<'_, RwLock<AppState>>) -> Result<()> {
     };
 
     let pdg = &vgraph.dpdg;
-    // First iterate over all the edges of the original DPDG. We will rebuild the entire node and edges list.
-    // This is slow, but easy. On every edge, propagate upwards to find the highest collapsed hierarchical level.
-    // Then check if we have already added this node to the new list. If so, take those indices, otherwise insert.
-    // Then redirect the edge. At the end, deduplicate the edges.
+
     let mut node_to_index = HashMap::new();
     let mut new_nodes = vec![];
     let mut new_edges = HashSet::new();
     let mut original_ids = vec![];
     let mut group_ids = HashMap::new();
 
+    // Process each edge, redirecting to hierarchical groups as needed
     for edge in &pdg.edges {
-        // check if from node has a hierarchical node
+        // Determine the effective source node (either original or collapsed group)
         let from_hier = &node_hier_lookup[&(edge.from as usize)];
         let mut from_is_group = true;
         let from_pdg_node = get_highest_hier_node(&from_hier).unwrap_or_else(|| {
             from_is_group = false;
-            vgraph.dpdg.vertices[edge.from as usize].clone() // otherwise, use the existing node
+            vgraph.dpdg.vertices[edge.from as usize].clone()
         });
 
-        // same for 'to'
+        // Determine the effective destination node (either original or collapsed group)
         let to_hier = &node_hier_lookup[&(edge.to as usize)];
         let mut to_is_group = true;
         let to_pdg_node = get_highest_hier_node(&to_hier).unwrap_or_else(|| {
             to_is_group = false;
-            vgraph.dpdg.vertices[edge.to as usize].clone() // otherwise, use the existing node
+            vgraph.dpdg.vertices[edge.to as usize].clone()
         });
 
-        // check if they already have an index, otherwise, insert
+        // Get or create index for source node in new graph
         let new_from_index = *node_to_index.entry(from_pdg_node.clone()).or_insert_with(|| {
             new_nodes.push(from_pdg_node);
             if from_is_group {
-                group_ids.insert(new_nodes.len()-1, from_hier.clone());
+                group_ids.insert(new_nodes.len() - 1, from_hier.clone());
                 original_ids.push(from_hier.read().unwrap().group_id);
             } else {
                 original_ids.push(edge.from as usize);
             }
-            new_nodes.len()-1
+            new_nodes.len() - 1
         });
-        
 
+        // Get or create index for destination node in new graph
         let new_to_index = *node_to_index.entry(to_pdg_node.clone()).or_insert_with(|| {
             new_nodes.push(to_pdg_node);
             if to_is_group {
-                group_ids.insert(new_nodes.len()-1, to_hier.clone());
+                group_ids.insert(new_nodes.len() - 1, to_hier.clone());
                 original_ids.push(to_hier.read().unwrap().group_id);
             } else {
                 original_ids.push(edge.to as usize);
             }
-            new_nodes.len()-1
+            new_nodes.len() - 1
         });
 
+        // Skip self-loops (edges within collapsed groups)
         if new_from_index == new_to_index {
             continue;
         }
 
-        // insert redirected edge.
+        // Create redirected edge (HashSet will deduplicate)
         let mut new_edge = edge.clone();
         new_edge.from = new_from_index as u32;
         new_edge.to = new_to_index as u32;
 
         new_edges.insert(new_edge);
     }
+
+    // Rebuild lookup tables for the new hierarchical graph
 
     let mut time_to_nodes = HashMap::new();
     for (idx, v) in new_nodes.iter().enumerate() {
@@ -251,36 +280,50 @@ pub fn rebuild_hier_graph(state: &State<'_, RwLock<AppState>>) -> Result<()> {
     for (idx, e) in new_edges.iter().enumerate() {
         prov_to_edges.entry(e.to).and_modify(|edges: &mut Vec<usize>| edges.push(idx)).or_insert(vec![idx]);
     }
-    
+
     vgraph.current_hier_dpdg = Some(HierarchicalGraph {
         dpdg: ExportablePDG { vertices: new_nodes, edges: new_edges.into_iter().collect::<Vec<_>>() },
         group_ids,
         original_ids,
         time_to_nodes,
         dep_to_edges,
-        prov_to_edges
+        prov_to_edges,
     });
 
     Ok(())
 }
 
+/// Traverses the hierarchy upwards to find the highest collapsed (non-expanded) ancestor node.
+///
+/// # Arguments
+/// * `hierarchy` - Starting hierarchy node to traverse from
+///
+/// # Returns
+/// * `Some(ExportablePDGNode)` - The PDG node of the highest collapsed ancestor
+/// * `None` - If all ancestors are expanded (node should be shown directly)
 fn get_highest_hier_node(hierarchy: &Arc<RwLock<GraphNodeHierarchy>>) -> Option<ExportablePDGNode> {
     let mut parent = hierarchy.clone();
     let mut highest_level = None;
+
+    // Traverse upwards through parent hierarchy
     loop {
         let new_parent = {
             let guard = parent.read().unwrap();
+
+            // If this level is collapsed, it's a candidate for highest collapsed ancestor
             if !guard.expanded {
                 highest_level = Some(guard.pdg_node.clone());
             }
+
+            // Try to move to parent level
             if let Some(p) = &guard.parent {
                 if let Some(p) = p.upgrade() {
                     p.clone()
                 } else {
-                    break;
+                    break; // Weak reference invalid, reached root
                 }
             } else {
-                break;
+                break; // No parent, reached root
             }
         };
         parent = new_parent;
@@ -289,35 +332,69 @@ fn get_highest_hier_node(hierarchy: &Arc<RwLock<GraphNodeHierarchy>>) -> Option<
     highest_level
 }
 
+/// Creates a synthetic PDG node representing a hierarchical group/module.
+///
+/// # Arguments
+/// * `name` - Display name for the hierarchical node
+/// * `timestamp` - Timestamp to associate with this node
+/// * `module_path` - Path in the module hierarchy
+///
+/// # Returns
+/// * `ExportablePDGNode` with minimal fields populated for display
 fn create_hier_pdg_node(name: String, timestamp: i64, module_path: Vec<String>) -> ExportablePDGNode {
-    ExportablePDGNode { file: "".into(), line: 0, char: 0, name, kind: chiseltrace_rs::pdg_spec::PDGSpecNodeKind::Definition, clocked: false, module_path, related_signal: None, sim_data: None, timestamp, is_chisel_assignment: false }
+    ExportablePDGNode {
+        file: "".into(),
+        line: 0,
+        char: 0,
+        name,
+        kind: chiseltrace_rs::pdg_spec::PDGSpecNodeKind::Definition,
+        clocked: false,
+        module_path,
+        related_signal: None,
+        sim_data: None,
+        timestamp,
+        is_chisel_assignment: false,
+    }
 }
 
-/// Builds a node hierarchy by first creating the hierarchy, then adding the nodes and making a reverse mapping
+/// Builds a hierarchical tree structure from the flat list of DPDG nodes.
+///
+/// For each timestamp, this creates a tree where:
+/// - The root is a "top" module
+/// - Intermediate nodes represent module instances in the design hierarchy
+/// - Leaf nodes contain references to actual PDG nodes at that hierarchy level
+///
+/// The function also creates a reverse lookup map from node indices to their hierarchy nodes,
+/// which is used during graph traversal to determine which hierarchical group a node belongs to.
+///
+/// # Arguments
+/// * `dpdg` - The DPDG containing nodes to organize hierarchically
+///
+/// # Returns
+/// * Tuple of:
+///   - Vector of root hierarchy nodes (one per timestamp)
+///   - HashMap mapping node index to its hierarchy node (for reverse lookup)
 fn build_node_hierarchy(dpdg: &ExportablePDG) -> (Vec<Arc<RwLock<GraphNodeHierarchy>>>, HashMap<usize, Arc<RwLock<GraphNodeHierarchy>>>) {
-    // Input: list of nodes with various levels of hierachies.
-    // Desired output: Tree with the entire design hierarchy and indices for all the nodes in them
-    // The main idea here is that for grouped mode there will be a separate graph. Upon each expand / collapse, the ViewablePDG will be rebuilt
-    // Each edge will still contain references to node IDS. However, during the conversion process, for each node (which has a reference to the parent hierarchical group),
-    // the lowest level expanded hierarchical group will be taken instead. If a group above the node in the hierarchy is collapsed,
-    // the edge will instead be redirected to the group. After this phase, edges are deduplicated and visible nodes are calculated from the remaining edges
-
-    // This is an arc because otherwise the compile complains (has to be send+sync for tokio I assume)
     let num_timestamps = dpdg.vertices.iter().map(|v| v.timestamp).max().unwrap();
 
-    // We preemptively give the groups IDs. These IDs are vis.js IDs that will be used to draw the graph.
     let mut groups = vec![];
     let mut reverse_hier_lookup = HashMap::new();
+
+    // Assign unique IDs to hierarchy groups for vis.js rendering
     let global_id_offset = dpdg.vertices.len() * 5;
     let mut group_count = 0;
+
+    // Build hierarchy tree separately for each timestamp
     for timestamp in 0..=num_timestamps {
-        let top = Arc::new(RwLock::new(GraphNodeHierarchy { instance_name: "top".into(),
+        // Create root node for this timestamp
+        let top = Arc::new(RwLock::new(GraphNodeHierarchy {
+            instance_name: "top".into(),
             expanded: true,
             pdg_node: create_hier_pdg_node("module_top".into(), timestamp, vec![]),
             node_indices: vec![],
             children: vec![],
             parent: None,
-            group_id: global_id_offset + group_count
+            group_id: global_id_offset + group_count,
         }));
         group_count += 1;
 
@@ -328,19 +405,20 @@ fn build_node_hierarchy(dpdg: &ExportablePDG) -> (Vec<Arc<RwLock<GraphNodeHierar
             .enumerate()
             .filter(|(_, v)| v.timestamp == timestamp);
 
-        // Make a list of unique paths
+        // Extract all unique module paths for this timestamp
         for (_, node) in filtered_nodes.clone() {
             unique_paths.insert(node.module_path.clone());
         }
 
-        // Sort the paths by length, then create sub hierarchies
+        // Sort paths by length to ensure parent nodes are created before children
         let mut unique_paths = unique_paths.into_iter().collect::<Vec<_>>();
         unique_paths.sort_by_key(|p| p.len());
 
+        // Build hierarchy tree by processing each unique path
         for path in &unique_paths {
             let mut parent = top.clone();
             let (head, tail) = if path.len() > 1 {
-                (&path[0..path.len()-1], &path[path.len()-1..])
+                (&path[0..path.len() - 1], &path[path.len() - 1..])
             } else {
                 (&[] as &[String], &path[..])
             };
@@ -348,14 +426,17 @@ fn build_node_hierarchy(dpdg: &ExportablePDG) -> (Vec<Arc<RwLock<GraphNodeHierar
             if tail.len() == 0 || tail[0] == "" {
                 continue;
             }
-            
-            // Traverse the tree to the desired leaf where we want to add the new one
+
+            // Traverse/create intermediate hierarchy nodes (all path parts except last)
             for path_part in head {
                 let new_parent = {
                     let mut parent_lock = parent.write().unwrap();
+
+                    // Check if this hierarchy level already exists
                     if let Some(p) = parent_lock.children.iter().find(|n| n.read().unwrap().instance_name.eq(path_part)) {
                         p.clone()
                     } else {
+                        // Create new hierarchy node
                         let mut my_modpath = parent_lock.pdg_node.module_path.clone();
                         my_modpath.push(path_part.clone());
 
@@ -366,7 +447,7 @@ fn build_node_hierarchy(dpdg: &ExportablePDG) -> (Vec<Arc<RwLock<GraphNodeHierar
                             node_indices: vec![],
                             children: vec![],
                             parent: Some(Arc::downgrade(&parent)),
-                            group_id: global_id_offset + group_count
+                            group_id: global_id_offset + group_count,
                         })));
                         group_count += 1;
                         parent_lock.children.last().unwrap().clone()
@@ -375,7 +456,7 @@ fn build_node_hierarchy(dpdg: &ExportablePDG) -> (Vec<Arc<RwLock<GraphNodeHierar
                 parent = new_parent;
             }
 
-            // Now add the tail node
+            // Create the leaf hierarchy node (last path component)
             let mut parent_lock = parent.write().unwrap();
             let mut my_modpath = parent_lock.pdg_node.module_path.clone();
             my_modpath.push(tail[0].clone());
@@ -386,16 +467,16 @@ fn build_node_hierarchy(dpdg: &ExportablePDG) -> (Vec<Arc<RwLock<GraphNodeHierar
                 node_indices: vec![],
                 children: vec![],
                 parent: Some(Arc::downgrade(&parent)),
-                group_id: global_id_offset + group_count
+                group_id: global_id_offset + group_count,
             })));
             group_count += 1;
         }
 
-        // println!("{:#?}", top);
-
-        // Add all the nodes to their correct group
+        // Assign each PDG node to its corresponding hierarchy leaf node
         for (idx, node) in filtered_nodes {
             let mut parent = top.clone();
+
+            // Traverse to the correct leaf node
             for path_part in &node.module_path {
                 if path_part == "" {
                     continue;
@@ -406,6 +487,8 @@ fn build_node_hierarchy(dpdg: &ExportablePDG) -> (Vec<Arc<RwLock<GraphNodeHierar
                 };
                 parent = new_parent;
             }
+
+            // Add node index to leaf and create reverse lookup
             parent.write().unwrap().node_indices.push(idx);
             reverse_hier_lookup.insert(idx, parent.clone());
         }
