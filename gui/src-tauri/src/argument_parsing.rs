@@ -3,7 +3,7 @@ use std::path::Path;
 use clap::Parser;
 use anyhow::Result;
 use chiseltrace_rs::{graphbuilder::CriterionType, util::parse_criterion};
-
+use chiseltrace_rs::graphbuilder::LanguageMode;
 use crate::errors;
 
 /// A GUI program to visualize chisel dynamic program dependency graphs
@@ -51,9 +51,9 @@ pub struct Args {
     #[arg(long)]
     pub hier_grouping: Option<bool>,
 
-    /// Disables conversion to Chisel representation
-    #[arg(long)]
-    pub fir: Option<bool>
+    /// Used to configure behaviour and expected paths based on the source language of the circuit.
+    #[arg(short, long, default_value = "Chisel",)]
+    pub language: LanguageMode,
 }
 
 impl Args {

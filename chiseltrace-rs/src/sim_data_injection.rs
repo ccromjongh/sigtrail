@@ -8,6 +8,7 @@ use anyhow::Result;
 use vcd::{Command, IdCode};
 
 use crate::{errors::Error, pdg_spec::{ExportablePDG, ExportablePDGNode}};
+use crate::graphbuilder::LanguageMode;
 
 pub struct TywavesInterface {
     builder: TyVcdBuilder<hgldd::spec::Hgldd>,
@@ -162,13 +163,13 @@ impl TywavesInterface {
     // select based on the field path
     // 3) Add the information to the node
 
-    pub fn inject_sim_data(&self, pdg: &mut ExportablePDG, vcd_path: impl AsRef<Path>) -> Result<()> {
+    pub fn inject_sim_data(&self, pdg: &mut ExportablePDG, vcd_path: impl AsRef<Path>, language_mode: LanguageMode) -> Result<()> {
         let file = File::open(vcd_path)?;
         let reader = BufReader::new(file);
         let mut parser = vcd::Parser::new(reader);
         let header = parser.parse_header()?;
 
-        let signal_mapping = build_signal_map(&header);
+        let signal_mapping = build_signal_map(&header, language_mode.clone());
 
         let mut node_map: HashMap<i64, Vec<&mut ExportablePDGNode>> = HashMap::new();
         for node in &mut pdg.vertices {
@@ -177,7 +178,11 @@ impl TywavesInterface {
 
         let top_path: Vec<String> = vec!["TOP".into()];
 
-        let clock = header.find_var(&["TOP", "clk"]).ok_or(Error::ClockNotFoundError)?.code;
+        let clock_path: &[&str] = match language_mode {
+            LanguageMode::Chisel | LanguageMode::FIR => { &["TOP", "svsimTestbench", "dut", "clock"] }
+            LanguageMode::SpinalHDL => { &["TOP", "clk"] }
+        };
+        let clock = header.find_var(clock_path).ok_or(Error::ClockNotFoundError)?.code;
         
         // The rewritten VCD is a bit weird. It's best to squash all the changes (keep only the last one) for each timestep
         // (needs hashmap). Then on the timestamp after a clock cycle, update the global hashmap and add the values to the nodes
@@ -301,9 +306,15 @@ impl TywavesInterface {
 }
 
 /// Build a map of IdCode -> Hierarchical signal name
-fn build_signal_map(header: &vcd::Header) -> HashMap<IdCode, Vec<String>> {
+fn build_signal_map(header: &vcd::Header, language_mode: LanguageMode) -> HashMap<IdCode, Vec<String>> {
+    // FIXME: Should this not just be the content of the extra scopes argument?
+    let clock_path: &[&str] = match language_mode {
+        LanguageMode::Chisel | LanguageMode::FIR => { &["TOP", "svsimTestbench", "dut"] }
+        LanguageMode::SpinalHDL => { &["TOP"] }
+    };
+    
     let mut signals = HashMap::new();
-    if let Some(dut) = header.find_scope(&["TOP", "svsimTestbench", "dut"]) {
+    if let Some(dut) = header.find_scope(clock_path) {
         let mut stack = vec![];
         stack.extend_from_slice(&dut.items.iter().map(|i| ("".to_string(), i)).collect::<Vec<_>>());
         while let Some((prefix, item)) = stack.pop() {

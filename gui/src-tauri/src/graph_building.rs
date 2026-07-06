@@ -1,11 +1,12 @@
-use std::{collections::{HashMap, HashSet}, fs::{read_to_string, File}, io::BufReader, sync::{Arc, RwLock}, time::SystemTime};
-
+use std::{collections::{HashMap, HashSet}, fs::{read_to_string, File}, io::BufReader, path, sync::{Arc, RwLock}, time::SystemTime};
+use std::path::{Path, PathBuf};
 use chiseltrace_rs::{conversion::{dpdg_make_exportable, pdg_convert_to_source}, graphbuilder::{GraphBuilder, GraphProcessingType}, pdg_spec::{ExportablePDG, ExportablePDGNode, PDGSpec}, sim_data_injection::TywavesInterface};
 use serde::Deserialize;
 use tauri::State;
 use anyhow::{anyhow, Result};
-
+use chiseltrace_rs::graphbuilder::LanguageMode;
 use crate::{app_state::{AppState, GraphNodeHierarchy, HierarchicalGraph, ViewableGraph}, errors::map_err_to_string_async};
+use crate::app_state::PDGConfig;
 
 /// Tauri command that builds a Dynamic Program Dependence Graph (DPDG) from PDG and VCD files.
 ///
@@ -72,8 +73,8 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
             now = SystemTime::now();
             println!("Made DPDG exportable");
 
-            // Convert from FIRRTL to source language representation unless FIR mode is enabled
-            let mut converted_pdg = if !pdg_config.fir_repr {
+            // Convert from FIRRTL to Chisel source language representation unless FIR or other mode is used
+            let mut converted_pdg = if let LanguageMode::Chisel = pdg_config.language_mode {
                 pdg_convert_to_source(dpdg, false, true)
             } else {
                 dpdg
@@ -87,8 +88,13 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
 
             // Inject simulation values into graph nodes using Tywaves
             let tywaves = TywavesInterface::new(&pdg_config.hgldd_path, pdg_config.extra_scopes.clone(), &pdg_config.top_module)?;
+            let vcd_path: &PathBuf = if let LanguageMode::Chisel = pdg_config.language_mode {
+                &Path::new(&tywaves.vcd_rewrite(&pdg_config.vcd_path)?).to_path_buf()
+            } else {
+                &pdg_config.vcd_path
+            };
             println!("VCD rewrite done");
-            tywaves.inject_sim_data(&mut converted_pdg, &pdg_config.vcd_path)?;
+            tywaves.inject_sim_data(&mut converted_pdg, &vcd_path, pdg_config.language_mode)?;
 
             println!("Tywaves: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
 

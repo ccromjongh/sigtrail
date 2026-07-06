@@ -4,6 +4,7 @@ use clap::Parser;
 use anyhow::Result;
 
 use app_state::{AppState, PDGConfig};
+use chiseltrace_rs::graphbuilder::LanguageMode;
 use graph_building::make_dpdg;
 use graph_interaction::{get_n_timeslots, get_partial_graph, toggle_module, set_new_head, reset_head, open_vs_code};
 
@@ -32,7 +33,7 @@ pub fn run() -> Result<()> {
         max_timesteps: args.max_timesteps,
         data_only: args.data_only.unwrap_or(false),
         group_nodes: args.hier_grouping.unwrap_or(false),
-        fir_repr: args.fir.unwrap_or(false)
+        language_mode: args.language
     });
 
     tauri::Builder::default()

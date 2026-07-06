@@ -83,6 +83,14 @@ pub enum CriterionType {
     Signal(String),
 }
 
+/// Used to configure behaviour and expected paths based on the source language of the circuit.
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum LanguageMode {
+    Chisel,
+    FIR,
+    SpinalHDL
+}
+
 /// Controls which types of dependencies to include in the dynamic graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphProcessingType {
@@ -99,8 +107,8 @@ impl GraphBuilder {
     ///
     /// This preprocesses the static PDG by creating bidirectional adjacency lists
     /// using hash maps for O(1) edge lookup instead of O(n) iteration.
-    pub fn new(vcd_path: impl AsRef<Path>, extra_scopes: Vec<String>, pdg: PDGSpec) -> Result<GraphBuilder> {
-        let vcd_reader = VcdReader::new(vcd_path, extra_scopes)?;
+    pub fn new(vcd_path: impl AsRef<Path>, extra_scopes: Vec<String>, pdg: PDGSpec, language_mode: LanguageMode) -> Result<GraphBuilder> {
+        let vcd_reader = VcdReader::new(vcd_path, extra_scopes, language_mode)?;
 
         // Wrap PDG nodes in refcounted cells for shared mutable access during traversal
         let linked = pdg.vertices.iter().map(|v| {
@@ -388,14 +396,15 @@ impl GraphBuilder {
 
 impl VcdReader {
     /// Creates a new VCD reader and parses the header to locate clock and reset signals.
-    fn new(vcd_path: impl AsRef<Path>, extra_scopes: Vec<String>) -> Result<Self> {
+    fn new(vcd_path: impl AsRef<Path>, extra_scopes: Vec<String>, language_mode: LanguageMode) -> Result<Self> {
         let file = File::open(vcd_path)?;
         let reader = BufReader::new(file);
         let mut parser = vcd::Parser::new(reader);
         let header = parser.parse_header()?;
 
         let mut clock_path = extra_scopes.clone();
-        clock_path.push("clk".into());
+        let clock_name = if let LanguageMode::SpinalHDL = language_mode { "clk".into() } else { "clock".into() };
+        clock_path.push(clock_name);
 
         let mut reset_path = extra_scopes.clone();
         reset_path.push("reset".into());
