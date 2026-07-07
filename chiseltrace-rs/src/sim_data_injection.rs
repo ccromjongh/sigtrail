@@ -5,6 +5,7 @@ use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
 
 use tywaves_rs::{hgldd, tyvcd::{builder::{GenericBuilder, TyVcdBuilder}, spec::{Variable, VariableKind}, trace_pointer::TraceFinder}};
 use anyhow::Result;
+use log::error;
 use vcd::{Command, IdCode};
 
 use crate::{errors::Error, pdg_spec::{ExportablePDG, ExportablePDGNode}};
@@ -126,7 +127,7 @@ impl TywavesInterface {
             // Struct and vector get traversed using the field path
             VariableKind::Struct { fields } | VariableKind::Vector { fields } => {
                 let Some(field_str) = field_path.get(0) else {
-                    println!("Something has gone terribly wrong! (no field, but still struct left)");
+                    error!("Something has gone terribly wrong! (no field, but still struct left)");
                     return None;
                 };
 
@@ -145,8 +146,8 @@ impl TywavesInterface {
                     let new_field_path = &field_path[1..];
                     self.translate_variable_field(f, field_val, new_field_path, Some(&f.high_level_info.type_name))
                 } else {
-                    println!("Something has gone terribly wrong! (field not found) {}", field_str);
-                    println!("{:?}", fields.iter().map(|f| f.name.clone()).collect::<Vec<_>>());
+                    error!("Something has gone terribly wrong! (field not found) {}", field_str);
+                    error!("{:?}", fields.iter().map(|f| f.name.clone()).collect::<Vec<_>>());
                     None
                 }
             }
@@ -312,7 +313,7 @@ fn build_signal_map(header: &vcd::Header, language_mode: LanguageMode) -> HashMa
         LanguageMode::Chisel | LanguageMode::FIR => { &["TOP", "svsimTestbench", "dut"] }
         LanguageMode::SpinalHDL => { &["TOP"] }
     };
-    
+
     let mut signals = HashMap::new();
     if let Some(dut) = header.find_scope(clock_path) {
         let mut stack = vec![];

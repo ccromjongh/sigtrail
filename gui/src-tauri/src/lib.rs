@@ -2,7 +2,7 @@ use std::sync::RwLock;
 
 use clap::Parser;
 use anyhow::Result;
-
+use tauri::Manager;
 use app_state::{AppState, PDGConfig};
 use chiseltrace_rs::graphbuilder::LanguageMode;
 use graph_building::make_dpdg;
@@ -36,10 +36,19 @@ pub fn run() -> Result<()> {
         language_mode: args.language
     });
 
+    let config = state.pdg_config.as_ref().unwrap();
+    let window_title = format!("ChiselTrace – {} – {:?} – {:?}", config.top_module, config.criterion, config.language_mode);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(RwLock::new(state))
         .invoke_handler(tauri::generate_handler![get_initial_route, make_dpdg, get_n_timeslots, get_partial_graph, toggle_module, set_new_head, reset_head, open_vs_code])
+        .setup(move |app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_title(&window_title);
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
     Ok(())

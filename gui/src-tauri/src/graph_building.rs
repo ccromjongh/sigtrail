@@ -5,6 +5,7 @@ use serde::Deserialize;
 use tauri::State;
 use anyhow::{anyhow, Result};
 use chiseltrace_rs::graphbuilder::LanguageMode;
+use log::info;
 use crate::{app_state::{AppState, GraphNodeHierarchy, HierarchicalGraph, ViewableGraph}, errors::map_err_to_string_async};
 use crate::app_state::PDGConfig;
 
@@ -50,28 +51,28 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
             let mut deser = serde_json::Deserializer::from_reader(reader);
             deser.disable_recursion_limit();
             let pdg_raw = PDGSpec::deserialize(&mut deser)?;
-            println!("Processing PDG with {} nodes and {} edges", pdg_raw.vertices.len(), pdg_raw.edges.len());
+            info!("Processing PDG with {} nodes and {} edges", pdg_raw.vertices.len(), pdg_raw.edges.len());
             let sliced = pdg_raw;
 
-            println!("PDG read: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
+            info!("PDG read: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
             now = SystemTime::now();
 
-            println!("Read PDG from file");
+            info!("Read PDG from file");
 
             // Build the Dynamic PDG by analyzing simulation trace data
-            let mut builder = GraphBuilder::new(&pdg_config.vcd_path, pdg_config.extra_scopes.clone(), sliced)?;
+            let mut builder = GraphBuilder::new(&pdg_config.vcd_path, pdg_config.extra_scopes.clone(), sliced, pdg_config.language_mode.clone())?;
             let processing_type = if pdg_config.data_only { GraphProcessingType::DataOnly } else { GraphProcessingType::Normal };
             let dpdg = builder.process(&pdg_config.criterion, pdg_config.max_timesteps.map(|t| t as i64), processing_type)?;
 
-            println!("DPDG build: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
+            info!("DPDG build: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
             now = SystemTime::now();
-            println!("DPDG build complete");
+            info!("DPDG build complete");
 
             let dpdg = dpdg_make_exportable(dpdg);
 
-            println!("Exportable: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
+            info!("Exportable: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
             now = SystemTime::now();
-            println!("Made DPDG exportable");
+            info!("Made DPDG exportable");
 
             // Convert from FIRRTL to Chisel source language representation unless FIR or other mode is used
             let mut converted_pdg = if let LanguageMode::Chisel = pdg_config.language_mode {
@@ -80,11 +81,11 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
                 dpdg
             };
 
-            println!("Conversion: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
+            info!("Conversion: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
             now = SystemTime::now();
-            println!("Converted to source representation");
+            info!("Converted to source representation");
 
-            println!("DPDG has {} nodes and {} edges", converted_pdg.vertices.len(), converted_pdg.edges.len());
+            info!("DPDG has {} nodes and {} edges", converted_pdg.vertices.len(), converted_pdg.edges.len());
 
             // Inject simulation values into graph nodes using Tywaves
             let tywaves = TywavesInterface::new(&pdg_config.hgldd_path, pdg_config.extra_scopes.clone(), &pdg_config.top_module)?;
@@ -93,19 +94,19 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
             } else {
                 &pdg_config.vcd_path
             };
-            println!("VCD rewrite done");
+            info!("VCD rewrite done");
             tywaves.inject_sim_data(&mut converted_pdg, &vcd_path, pdg_config.language_mode)?;
 
-            println!("Tywaves: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
+            info!("Tywaves: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
 
             // Adjust timestamps (convert from 0-indexed to 1-indexed)
             for v in &mut converted_pdg.vertices {
                 v.timestamp += 1;
             }
 
-            println!("Total: {}", (start_time.elapsed().unwrap().as_nanos() as f64) / 1e6);
+            info!("Total: {}", (start_time.elapsed().unwrap().as_nanos() as f64) / 1e6);
 
-            println!("Data injection done");
+            info!("Data injection done");
 
             // Build hierarchical grouping structure if enabled
             let (node_hierarchy, node_hierarchy_lookup) = if pdg_config.group_nodes {

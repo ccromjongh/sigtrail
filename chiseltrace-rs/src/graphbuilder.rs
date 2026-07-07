@@ -3,7 +3,7 @@ use itertools::Itertools;
 use serde::Serialize;
 use vcd::{Command as Command, IdCode};
 use anyhow::Result;
-
+use log::{debug, info};
 use crate::{pdg_spec::{PDGSpec, PDGSpecEdge, PDGSpecEdgeKind, PDGSpecNode, PDGSpecNodeKind}, errors::Error};
 
 /// Main structure for building dynamic program dependence graphs (DPDGs) from VCD traces.
@@ -481,6 +481,7 @@ impl VcdReader {
                     // Changes at same timestamp as rising edge are processed next cycle
                     if rising_edge_found {
                         self.current_time += 1;
+                        info!("Processing cycle {} at time {}", self.current_time, _t);
                         eof_reached = false;
                         break;
                     } else {
@@ -496,9 +497,11 @@ impl VcdReader {
                         rising_edge_found = true;
                     }
                     self.clock_val = v;
+                    debug!("Clock: {}", if let vcd::Value::V1 = v { "high" } else { "low" });
                 }
                 Command::ChangeScalar(i, v) if i == self.reset => {
                     self.reset_val = v;
+                    debug!("Reset: {}", if let vcd::Value::V1 = v { "high" } else { "low" });
                 }
                 Command::ChangeScalar(i, v) => {
                     if let Some(probes) = self.probes.get(&i) {
@@ -508,6 +511,7 @@ impl VcdReader {
                                 _ => 0
                             };
                             self.probe_change_buffer.push((probe.clone(), unsigned_v));
+                            info!("Probe change: {} = {}", probe, unsigned_v);
                         }
                     } else {
                         self.changes_buffer.push(ValueChange { id: i, value: v });

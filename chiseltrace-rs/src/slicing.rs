@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::{cell::RefCell, collections::HashMap, fs::File, io::BufWriter, rc::Rc};
 use anyhow::{anyhow, Result};
+use log::info;
 use crate::errors::Error;
 use crate::graphbuilder::DynPDGNode;
 use crate::pdg_spec::{CFGSpecStatement, ExportablePDG, ExportableSlice, LinkedPDGNode, PDGSpec, PDGSpecEdge};
@@ -120,7 +121,7 @@ pub fn pdg_slice(pdg: PDGSpec, criterion: &str) -> Result<PDGSpec> {
     let (mut removed_indices, idx_remap) = get_edge_replacement_mapping(&linkable_nodes, stmt_idx);
 
     // TODO: remove
-    println!("Started with {} nodes; Sliced node count: {}", pdg.vertices.len(), pdg.vertices.len() - removed_indices.len());
+    info!("Started with {} nodes; Sliced node count: {}", pdg.vertices.len(), pdg.vertices.len() - removed_indices.len());
 
     let mut new_vertices = pdg.vertices.clone();
 

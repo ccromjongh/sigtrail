@@ -1,5 +1,4 @@
 use std::{collections::HashSet, fs::{read_to_string, File}, io::BufWriter, path::Path};
-use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use chiseltrace_rs::{conversion::{dpdg_make_exportable, pdg_convert_to_source}, graphbuilder::GraphProcessingType, slicing::{pdg_slice, write_dynamic_slice, write_static_slice}, util::parse_criterion};
@@ -7,6 +6,9 @@ use chiseltrace_rs::graphbuilder::{GraphBuilder, CriterionType, LanguageMode};
 use chiseltrace_rs::pdg_spec::PDGSpec;
 use chiseltrace_rs::sim_data_injection::TywavesInterface;
 use serde::Deserialize;
+
+extern crate pretty_env_logger;
+#[macro_use] extern crate log;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -88,6 +90,8 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
+    println!("ChiselTrace CLI");
+    pretty_env_logger::init();
     let args = Args::parse();
     let argpath = match &args.command {
         Commands::Slice { path, .. } => path,
@@ -120,17 +124,17 @@ fn main() -> Result<()> {
             // write_pdg(&sliced, "out_pdg.json")?;
             // println!("{:#?}", args);
 
-            println!("Starting dynamic PDG building");
+            info!("Starting dynamic PDG building");
             let mut builder = GraphBuilder::new(vcd_path, extra_scopes.clone().unwrap_or(vec![]), sliced, args.language.clone())?;
             let dpdg = builder.process(&slice_criterion, max_timesteps, GraphProcessingType::Normal)?;
 
-            println!("Making DPDG exportable");
+            info!("Making DPDG exportable");
             let dpdg = dpdg_make_exportable(dpdg);
             
-            println!("Converting to source representation");
+            info!("Converting to source representation");
             let mut converted_pdg = pdg_convert_to_source(dpdg, false, true);
 
-            println!("Adding tywaves info");
+            info!("Adding tywaves info");
             let tywaves = TywavesInterface::new(Path::new(hgldd_path), extra_scopes.clone().unwrap_or(vec![]), &top_module)?;
 
             let vcd_path = if let LanguageMode::Chisel = args.language {
@@ -138,7 +142,7 @@ fn main() -> Result<()> {
             } else {
                 vcd_path
             };
-            println!("VCD rewritten");
+            info!("VCD rewritten");
             tywaves.inject_sim_data(&mut converted_pdg, &vcd_path, args.language)?;
 
             let mut lines = HashSet::new();
@@ -147,8 +151,8 @@ fn main() -> Result<()> {
                     lines.insert((vert.file.clone(), vert.line));
                 }
             }
-            println!("Unique source lines in DPDG: {}", lines.len());
-            println!("Num verts: {}, num edges: {}", converted_pdg.vertices.len(), converted_pdg.edges.len());
+            info!("Unique source lines in DPDG: {}", lines.len());
+            info!("Num verts: {}, num edges: {}", converted_pdg.vertices.len(), converted_pdg.edges.len());
     
             let f = File::create(&output_path)?;
             let writer = BufWriter::new(f);
@@ -158,7 +162,7 @@ fn main() -> Result<()> {
             let sliced  = pdg_raw;
             let max_timesteps = max_timesteps.map(|x| x as i64);
 
-            println!("Starting dynamic PDG building");
+            info!("Starting dynamic PDG building");
             let mut builder = GraphBuilder::new(vcd_path, extra_scopes.clone().unwrap_or(vec![]), sliced, args.language.clone())?;
             let dpdg = builder.process(&slice_criterion, max_timesteps.clone(), GraphProcessingType::Full)?;
 
