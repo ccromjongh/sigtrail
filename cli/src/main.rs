@@ -36,7 +36,7 @@ enum Commands {
     DynPDG {
         /// The path to the input PDG
         pdg_path: String,
-        /// The path the the VCD file
+        /// The path to the VCD file
         vcd_path: String,
         /// Path to the HGLDD directory
         hgldd_path: String,
@@ -47,22 +47,23 @@ enum Commands {
         )]
         slice_criterion: CriterionType,
         /// Maximum amount of timesteps
+        #[arg(long)]
         max_timesteps: Option<u64>,
         /// The name of the top-level module
         top_module: String,
 
         /// Specifies additional scopes that will be used while processing.
-        #[clap(value_delimiter = ' ', num_args = 1..)]
+        #[clap(long, value_delimiter = ' ', num_args = 1..)]
         extra_scopes: Option<Vec<String>>,
 
-        #[clap(default_value = "dynpdg.json")]
+        #[clap(long, default_value = "dynpdg.json")]
         output_path: String,
     },
     
     DynSlice {
         /// The path to the input PDG
         pdg_path: String,
-        /// The path the the VCD file
+        /// The path to the VCD file
         vcd_path: String,
         /// The statement that should be used for the program slicing.
         #[arg(
@@ -123,9 +124,11 @@ fn main() -> Result<()> {
             let sliced  = pdg_raw;
             // write_pdg(&sliced, "out_pdg.json")?;
             // println!("{:#?}", args);
+            
+            let resolved_scopes = extra_scopes.clone().unwrap_or(vec![]);
 
             info!("Starting dynamic PDG building");
-            let mut builder = GraphBuilder::new(vcd_path, extra_scopes.clone().unwrap_or(vec![]), sliced, args.language.clone())?;
+            let mut builder = GraphBuilder::new(vcd_path, resolved_scopes.clone(), sliced, args.language.clone())?;
             let dpdg = builder.process(&slice_criterion, max_timesteps, GraphProcessingType::Normal)?;
 
             info!("Making DPDG exportable");
@@ -135,7 +138,7 @@ fn main() -> Result<()> {
             let mut converted_pdg = pdg_convert_to_source(dpdg, false, true);
 
             info!("Adding tywaves info");
-            let tywaves = TywavesInterface::new(Path::new(hgldd_path), extra_scopes.clone().unwrap_or(vec![]), &top_module)?;
+            let tywaves = TywavesInterface::new(Path::new(hgldd_path), resolved_scopes.clone(), &top_module)?;
 
             let vcd_path = if let LanguageMode::Chisel = args.language {
                 &tywaves.vcd_rewrite(Path::new(vcd_path))?
@@ -143,7 +146,7 @@ fn main() -> Result<()> {
                 vcd_path
             };
             info!("VCD rewritten");
-            tywaves.inject_sim_data(&mut converted_pdg, &vcd_path, args.language)?;
+            tywaves.inject_sim_data(&mut converted_pdg, &vcd_path, &resolved_scopes, args.language)?;
 
             let mut lines = HashSet::new();
             for vert in &converted_pdg.vertices {

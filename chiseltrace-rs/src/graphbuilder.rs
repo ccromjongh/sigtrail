@@ -351,6 +351,7 @@ impl GraphBuilder {
             let pred_id = self.reader.find_var(&pred.name)?;
             self.pred_values.insert(pred_id, false);
             self.pred_idx_to_id.push(pred_id);
+            debug!("Initialized predicate: {} ↔ {} @ {}:{}", pred_id, pred.name, pred.file, pred.line);
         }
 
         Ok(())
@@ -380,6 +381,7 @@ impl GraphBuilder {
             if let Some(pred) = node.pred_stmt_ref {
                 let pred_id = self.pred_idx_to_id[pred as usize];
                 let pred_active = self.pred_values[&pred_id];
+                debug!("Predicate {} {} is {} @ {}:{}", pred_id, self.pdg.predicates[pred as usize].name, if pred_active { "active" } else { "inactive" }, self.pdg.predicates[pred as usize].file, self.pdg.predicates[pred as usize].line);
                 if pred_active {
                     if let Some(t_branch) = node.true_branch {
                         stack.extend(t_branch.into_iter().rev());

@@ -5,7 +5,7 @@ use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
 
 use tywaves_rs::{hgldd, tyvcd::{builder::{GenericBuilder, TyVcdBuilder}, spec::{Variable, VariableKind}, trace_pointer::TraceFinder}};
 use anyhow::Result;
-use log::error;
+use log::{debug, error};
 use vcd::{Command, IdCode};
 
 use crate::{errors::Error, pdg_spec::{ExportablePDG, ExportablePDGNode}};
@@ -164,20 +164,24 @@ impl TywavesInterface {
     // select based on the field path
     // 3) Add the information to the node
 
-    pub fn inject_sim_data(&self, pdg: &mut ExportablePDG, vcd_path: impl AsRef<Path>, language_mode: LanguageMode) -> Result<()> {
+    pub fn inject_sim_data(&self, pdg: &mut ExportablePDG, vcd_path: impl AsRef<Path>, scopes: &Vec<String>, language_mode: LanguageMode) -> Result<()> {
         let file = File::open(vcd_path)?;
         let reader = BufReader::new(file);
         let mut parser = vcd::Parser::new(reader);
         let header = parser.parse_header()?;
 
-        let signal_mapping = build_signal_map(&header, language_mode.clone());
+        let signal_mapping = build_signal_map(&header, scopes);
 
         let mut node_map: HashMap<i64, Vec<&mut ExportablePDGNode>> = HashMap::new();
         for node in &mut pdg.vertices {
             node_map.entry(node.timestamp).or_default().push(node);
         }
 
-        let top_path: Vec<String> = vec!["TOP".into()];
+        let top_path = scopes;
+        // let top_path: Vec<String> = match language_mode {
+        //     LanguageMode::Chisel | LanguageMode::FIR => { vec!["TOP".into(), "svsimTestbench".into(), "dut".into()] }
+        //     LanguageMode::SpinalHDL => { vec!["TOP".into()] }
+        // };
 
         let clock_path: &[&str] = match language_mode {
             LanguageMode::Chisel | LanguageMode::FIR => { &["TOP", "svsimTestbench", "dut", "clock"] }
@@ -198,7 +202,7 @@ impl TywavesInterface {
             let command = command?;
             match command {
                 Command::Timestamp(t) => {
-                    // println!("Timestamp: {t}, current time: {current_timestamp}");
+                    debug!("Timestamp: {t}, current time: {current_timestamp}");
                     // Update the global hashmap with the changes
                     if rising_edge_found {
                         if current_timestamp < 0 {
@@ -227,7 +231,7 @@ impl TywavesInterface {
                                         tywaves_variable_cache.get(&hier_path).unwrap()
                                     };
                                     // let ty_var = self.find_signal(&hier_path).ok();
-                                    // println!("{:#?}", ty_var);
+                                    debug!("{:#?}", ty_var);
                                     if let (Some(value), Some(tywaves_signal)) = (values_cache.get(&related_signal.signal_path), ty_var)  {
                                         let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
                                         node.sim_data =  self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
@@ -240,8 +244,8 @@ impl TywavesInterface {
                         cycle_changes.clear();
                     } else {
                         // We need to determine the exact signal changes that occurred on the falling edge and put
-                        // println!("{current_timestamp}");
-                        // println!("{:#?}", cycle_changes);
+                        debug!("{current_timestamp}");
+                        debug!("{:#?}", cycle_changes);
                         for (k,v) in &cycle_changes {
                             let Some(signals) = signal_mapping.get(k) else {
                                 continue;
@@ -269,7 +273,7 @@ impl TywavesInterface {
                                         tywaves_variable_cache.get(&hier_path).unwrap()
                                     };
 
-                                    // println!("{:#?}", ty_var);
+                                    debug!("{:#?}", ty_var);
                                     if let (Some(value), Some(tywaves_signal)) = (values_cache.get(&related_signal.signal_path), ty_var)  {
                                         let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
                                         node.sim_data =  self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
@@ -283,13 +287,13 @@ impl TywavesInterface {
                 Command::ChangeVector(i, v) if i == clock => {
                     let new_clock_val  = v.get(0).unwrap();
                     if clock_val == vcd::Value::V0 && new_clock_val == vcd::Value::V1 {
-                        // println!("Rising edge");
+                        debug!("Rising edge");
                         rising_edge_found = true;
                     }
                     clock_val = new_clock_val;
                 }
                 Command::ChangeVector(i, v) => {
-                    // println!("Change in {:?}: {v}", i);
+                    debug!("Change in {:?}: {v}", i);
                     cycle_changes.insert(i, v);
                     // if let Some(probes) = self.probes.get(&i) {
                     //     for probe in probes {
@@ -307,15 +311,9 @@ impl TywavesInterface {
 }
 
 /// Build a map of IdCode -> Hierarchical signal name
-fn build_signal_map(header: &vcd::Header, language_mode: LanguageMode) -> HashMap<IdCode, Vec<String>> {
-    // FIXME: Should this not just be the content of the extra scopes argument?
-    let clock_path: &[&str] = match language_mode {
-        LanguageMode::Chisel | LanguageMode::FIR => { &["TOP", "svsimTestbench", "dut"] }
-        LanguageMode::SpinalHDL => { &["TOP"] }
-    };
-
+fn build_signal_map(header: &vcd::Header, scopes: &Vec<String>) -> HashMap<IdCode, Vec<String>> {
     let mut signals = HashMap::new();
-    if let Some(dut) = header.find_scope(clock_path) {
+    if let Some(dut) = header.find_scope(scopes) {
         let mut stack = vec![];
         stack.extend_from_slice(&dut.items.iter().map(|i| ("".to_string(), i)).collect::<Vec<_>>());
         while let Some((prefix, item)) = stack.pop() {

@@ -95,7 +95,7 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
                 &pdg_config.vcd_path
             };
             info!("VCD rewrite done");
-            tywaves.inject_sim_data(&mut converted_pdg, &vcd_path, pdg_config.language_mode)?;
+            tywaves.inject_sim_data(&mut converted_pdg, &vcd_path, &pdg_config.extra_scopes, pdg_config.language_mode)?;
 
             info!("Tywaves: {}", (now.elapsed().unwrap().as_nanos() as f64) / 1e6);
 
