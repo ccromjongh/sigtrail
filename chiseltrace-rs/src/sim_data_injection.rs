@@ -232,9 +232,13 @@ impl TywavesInterface {
                                     };
                                     // let ty_var = self.find_signal(&hier_path).ok();
                                     debug!("{:#?}", ty_var);
-                                    if let (Some(value), Some(tywaves_signal)) = (values_cache.get(&related_signal.signal_path), ty_var)  {
-                                        let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
-                                        node.sim_data =  self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
+                                    if let Some(value) = values_cache.get(&related_signal.signal_path)  {
+                                        if let Some(tywaves_signal) = ty_var {
+                                            let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
+                                            node.sim_data = self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
+                                        } else {
+                                            node.sim_data = Some(value.clone());
+                                        }
                                     }
                                 }
                             }
@@ -274,9 +278,13 @@ impl TywavesInterface {
                                     };
 
                                     debug!("{:#?}", ty_var);
-                                    if let (Some(value), Some(tywaves_signal)) = (values_cache.get(&related_signal.signal_path), ty_var)  {
-                                        let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
-                                        node.sim_data =  self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
+                                    if let Some(value) = values_cache.get(&related_signal.signal_path)  {
+                                        if let Some(tywaves_signal) = ty_var {
+                                            let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
+                                            node.sim_data = self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
+                                        } else {
+                                            node.sim_data = Some(value.clone());
+                                        }
                                     }
                                 }
                             }
@@ -284,13 +292,22 @@ impl TywavesInterface {
                         cycle_changes.clear();
                     }
                 }
+                // This case is used for the Chisel language mode, where the clock signal is emitted as a [0:0] vector
                 Command::ChangeVector(i, v) if i == clock => {
                     let new_clock_val  = v.get(0).unwrap();
                     if clock_val == vcd::Value::V0 && new_clock_val == vcd::Value::V1 {
-                        debug!("Rising edge");
+                        debug!("Rising edge (vector)");
                         rising_edge_found = true;
                     }
                     clock_val = new_clock_val;
+                }
+                // For FIR and SpinalHDL, the clock signal is emitted as a scalar
+                Command::ChangeScalar(i, v) if i == clock => {
+                    if clock_val == vcd::Value::V0 && v == vcd::Value::V1 {
+                        debug!("Rising edge (scalar)");
+                        rising_edge_found = true;
+                    }
+                    clock_val = v;
                 }
                 Command::ChangeVector(i, v) => {
                     debug!("Change in {:?}: {v}", i);

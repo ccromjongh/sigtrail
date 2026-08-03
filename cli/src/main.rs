@@ -124,7 +124,7 @@ fn main() -> Result<()> {
             let sliced  = pdg_raw;
             // write_pdg(&sliced, "out_pdg.json")?;
             // println!("{:#?}", args);
-            
+
             let resolved_scopes = extra_scopes.clone().unwrap_or(vec![]);
 
             info!("Starting dynamic PDG building");
@@ -135,18 +135,23 @@ fn main() -> Result<()> {
             let dpdg = dpdg_make_exportable(dpdg);
             
             info!("Converting to source representation");
-            let mut converted_pdg = pdg_convert_to_source(dpdg, false, true);
+            // Convert from FIRRTL to Chisel source language representation unless FIR or other mode is used
+            let mut converted_pdg = if let LanguageMode::Chisel = args.language {
+                pdg_convert_to_source(dpdg, false, true)
+            } else {
+                dpdg
+            };
 
             info!("Adding tywaves info");
             let tywaves = TywavesInterface::new(Path::new(hgldd_path), resolved_scopes.clone(), &top_module)?;
 
-            let vcd_path = if let LanguageMode::Chisel = args.language {
+            let final_vcd_path = if let LanguageMode::Chisel = args.language {
                 &tywaves.vcd_rewrite(Path::new(vcd_path))?
             } else {
                 vcd_path
             };
             info!("VCD rewritten");
-            tywaves.inject_sim_data(&mut converted_pdg, &vcd_path, &resolved_scopes, args.language)?;
+            tywaves.inject_sim_data(&mut converted_pdg, &final_vcd_path, &resolved_scopes, args.language)?;
 
             let mut lines = HashSet::new();
             for vert in &converted_pdg.vertices {
