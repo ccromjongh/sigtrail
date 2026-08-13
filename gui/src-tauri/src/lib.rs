@@ -24,16 +24,26 @@ fn get_initial_route() -> String {
 pub fn run() -> Result<()> {
     let args = argument_parsing::Args::parse().validate()?;
     let mut state = AppState::new();
-    state.pdg_config = Some(PDGConfig { criterion: args.slice_criterion,
+
+    let language_mode = args.language;
+    let top_module = args.top_module;
+    // Fill in the VCD scopes based on the source language if unprovided
+    let extra_scopes = args.extra_scopes.unwrap_or_else(|| match language_mode {
+        LanguageMode::Chisel | LanguageMode::FIR => { vec!["TOP".into(), "svsimTestbench".into(), "dut".into()] }
+        LanguageMode::SpinalHDL => { vec!["TOP".into(), top_module.clone()] }
+    });
+
+    state.pdg_config = Some(PDGConfig {
+        criterion: args.slice_criterion,
         pdg_path: args.pdg_path.into(),
         vcd_path: args.vcd_path.into(),
         hgldd_path: args.hgldd_path.into(),
-        top_module: args.top_module,
-        extra_scopes: args.extra_scopes.unwrap_or(vec![]),
+        top_module,
+        extra_scopes,
         max_timesteps: args.max_timesteps,
         data_only: args.data_only.unwrap_or(false),
         group_nodes: args.hier_grouping.unwrap_or(false),
-        language_mode: args.language
+        language_mode
     });
 
     let config = state.pdg_config.as_ref().unwrap();

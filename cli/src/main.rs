@@ -76,7 +76,7 @@ enum Commands {
         max_timesteps: Option<u64>,
         /// Specifies additional scopes that will be used while processing.
         #[clap(long, value_delimiter = ' ', num_args = 1..)]
-        extra_scopes: Option<Vec<String>>,
+        extra_scopes: Vec<String>,
 
         #[clap(long, default_value = "dynslice.json")]
         output_path: String,
@@ -125,7 +125,10 @@ fn main() -> Result<()> {
             // write_pdg(&sliced, "out_pdg.json")?;
             // println!("{:#?}", args);
 
-            let resolved_scopes = extra_scopes.clone().unwrap_or(vec![]);
+            let resolved_scopes = extra_scopes.clone().unwrap_or_else(|| match args.language {
+                LanguageMode::Chisel | LanguageMode::FIR => { vec!["TOP".into(), "svsimTestbench".into(), "dut".into()] }
+                LanguageMode::SpinalHDL => { vec!["TOP".into(), top_module.clone()] }
+            });
 
             info!("Starting dynamic PDG building");
             let mut builder = GraphBuilder::new(vcd_path, resolved_scopes.clone(), sliced, args.language.clone())?;
@@ -171,7 +174,7 @@ fn main() -> Result<()> {
             let max_timesteps = max_timesteps.map(|x| x as i64);
 
             info!("Starting dynamic PDG building");
-            let mut builder = GraphBuilder::new(vcd_path, extra_scopes.clone().unwrap_or(vec![]), sliced, args.language.clone())?;
+            let mut builder = GraphBuilder::new(vcd_path, extra_scopes.clone(), sliced, args.language.clone())?;
             let dpdg = builder.process(&slice_criterion, max_timesteps.clone(), GraphProcessingType::Full)?;
 
             write_dynamic_slice(&dpdg, output_path)?;
