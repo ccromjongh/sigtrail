@@ -2,8 +2,8 @@ use std::path::Path;
 
 use clap::Parser;
 use anyhow::Result;
-use chiseltrace_rs::{graphbuilder::CriterionType, util::parse_criterion};
-use chiseltrace_rs::graphbuilder::LanguageMode;
+use sigtrail_rs::{graphbuilder::CriterionType, util::parse_criterion};
+use sigtrail_rs::graphbuilder::LanguageMode;
 use crate::errors;
 
 /// A GUI program to visualize chisel dynamic program dependency graphs

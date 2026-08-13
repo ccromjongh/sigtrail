@@ -1,10 +1,10 @@
 use std::{collections::{HashMap, HashSet}, fs::{read_to_string, File}, io::BufReader, path, sync::{Arc, RwLock}, time::SystemTime};
 use std::path::{Path, PathBuf};
-use chiseltrace_rs::{conversion::{dpdg_make_exportable, pdg_convert_to_source}, graphbuilder::{GraphBuilder, GraphProcessingType}, pdg_spec::{ExportablePDG, ExportablePDGNode, PDGSpec}, sim_data_injection::TywavesInterface};
+use sigtrail_rs::{conversion::{dpdg_make_exportable, pdg_convert_to_source}, graphbuilder::{GraphBuilder, GraphProcessingType}, pdg_spec::{ExportablePDG, ExportablePDGNode, PDGSpec}, sim_data_injection::TywavesInterface};
 use serde::Deserialize;
 use tauri::State;
 use anyhow::{anyhow, Result};
-use chiseltrace_rs::graphbuilder::LanguageMode;
+use sigtrail_rs::graphbuilder::LanguageMode;
 use log::info;
 use crate::{app_state::{AppState, GraphNodeHierarchy, HierarchicalGraph, ViewableGraph}, errors::map_err_to_string_async};
 use crate::app_state::PDGConfig;
@@ -354,7 +354,7 @@ fn create_hier_pdg_node(name: String, timestamp: i64, module_path: Vec<String>) 
         line: 0,
         char: 0,
         name,
-        kind: chiseltrace_rs::pdg_spec::PDGSpecNodeKind::Definition,
+        kind: sigtrail_rs::pdg_spec::PDGSpecNodeKind::Definition,
         clocked: false,
         module_path,
         related_signal: None,

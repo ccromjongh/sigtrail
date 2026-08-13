@@ -1,10 +1,10 @@
 use std::{collections::HashSet, fs::{read_to_string, File}, io::BufWriter, path::Path};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use chiseltrace_rs::{conversion::{dpdg_make_exportable, pdg_convert_to_source}, graphbuilder::GraphProcessingType, slicing::{pdg_slice, write_dynamic_slice, write_static_slice}, util::parse_criterion};
-use chiseltrace_rs::graphbuilder::{GraphBuilder, CriterionType, LanguageMode};
-use chiseltrace_rs::pdg_spec::PDGSpec;
-use chiseltrace_rs::sim_data_injection::TywavesInterface;
+use sigtrail_rs::{conversion::{dpdg_make_exportable, pdg_convert_to_source}, graphbuilder::GraphProcessingType, slicing::{pdg_slice, write_dynamic_slice, write_static_slice}, util::parse_criterion};
+use sigtrail_rs::graphbuilder::{GraphBuilder, CriterionType, LanguageMode};
+use sigtrail_rs::pdg_spec::PDGSpec;
+use sigtrail_rs::sim_data_injection::TywavesInterface;
 use serde::Deserialize;
 
 extern crate pretty_env_logger;
@@ -91,7 +91,7 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
-    println!("ChiselTrace CLI");
+    println!("SigTrail CLI");
     pretty_env_logger::init();
     let args = Args::parse();
     let argpath = match &args.command {

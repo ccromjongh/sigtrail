@@ -1,8 +1,8 @@
 [package]
-name = "chiseltrace-rs"
+name = "sigtrail-rs"
 version = "0.1.0"
 edition = "2024"
-description = "Back-end data processing library for ChiselTrace front-ends"
+description = "Back-end data processing library for SigTrail front-ends"
 authors = ["Jarl Brand <jarl.brand@gmail.com>"]
 license = "Apache-2.0"
 

@@ -536,53 +536,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chiseltrace"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chiseltrace-rs",
- "clap",
- "itertools",
- "log",
- "mimalloc",
- "pretty_env_logger",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "thiserror 2.0.12",
-]
-
-[[package]]
-name = "chiseltrace-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chiseltrace-rs",
- "clap",
- "log",
- "pretty_env_logger",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "chiseltrace-rs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "itertools",
- "log",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
- "tywaves-rs",
- "vcd",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3563,6 +3516,53 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9203b8055f63a2a00e2f593bb0510367fe707d7ff1e5c872de2f537b339e5410"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "sigtrail"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "itertools",
+ "log",
+ "mimalloc",
+ "pretty_env_logger",
+ "serde",
+ "serde_json",
+ "sigtrail-rs",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "sigtrail-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "log",
+ "pretty_env_logger",
+ "serde",
+ "serde_json",
+ "sigtrail-rs",
+]
+
+[[package]]
+name = "sigtrail-rs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "itertools",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tywaves-rs",
+ "vcd",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, HashSet}, path::PathBuf, sync::{Arc, RwLock, Weak}};
 
-use chiseltrace_rs::{graphbuilder::CriterionType, pdg_spec::{ExportablePDG, ExportablePDGNode}};
-use chiseltrace_rs::graphbuilder::LanguageMode;
+use sigtrail_rs::{graphbuilder::CriterionType, pdg_spec::{ExportablePDG, ExportablePDGNode}};
+use sigtrail_rs::graphbuilder::LanguageMode;
 
 pub struct AppState {
     pub pdg_config: Option<PDGConfig>,

@@ -94,7 +94,7 @@ pub enum LanguageMode {
 /// Controls which types of dependencies to include in the dynamic graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphProcessingType {
-    /// Standard ChiselTrace: data, control flow, and index dependencies
+    /// Standard SigTrail: data, control flow, and index dependencies
     Normal,
     /// Data dependencies only for smaller graphs
     DataOnly,

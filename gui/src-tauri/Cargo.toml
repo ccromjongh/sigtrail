@@ -1,8 +1,8 @@
 [package]
-name = "chiseltrace"
+name = "sigtrail"
 version = "0.1.0"
 edition = "2024"
-description = "Graph viewer front-end for ChiselTrace"
+description = "Graph viewer front-end for SigTrail"
 authors = ["Jarl Brand <jarl.brand@gmail.com>"]
 license = "Apache-2.0"
 
@@ -12,7 +12,7 @@ license = "Apache-2.0"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "chiseltrace_lib"
+name = "sigtrail_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -25,7 +25,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = {version = "1.0", features = ["unbounded_depth"] }
 clap = { version = "4.6.1", features = ["derive"] }
 anyhow = "1.0.97"
-chiseltrace-rs = { path = "../../chiseltrace-rs" }
+sigtrail-rs = { path = "../../sigtrail-rs" }
 thiserror = "2.0.12"
 itertools = "0.14.0"
 mimalloc = "0.1.46"

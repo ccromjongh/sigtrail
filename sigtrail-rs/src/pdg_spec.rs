@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use serde::{Serialize, Deserialize};
+use vcd::{IdCode, Value, Vector};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PDGSpec {
@@ -102,6 +103,37 @@ pub struct CFGSpecStatement {
     #[serde(default)]
     pub false_branch: Option<Vec<CFGSpecStatement>>,
 }
+
+/*#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CFGSpecStatement2 {
+    pub stmt_ref: u32,
+    #[serde(default)]
+    pub pred_stmt_ref: Option<u32>,
+    #[serde(default)]
+    pub branches: Option<Vec<CFGBranchStatement>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CFGBranchStatement {
+    #[serde(default)]
+    pub match_values: Vec<BranchMatchValue>,
+    #[serde(default)]
+    pub branch_stmts: Option<Vec<CFGSpecStatement>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub enum BranchMatchValue {
+    /// A 0a change to a scalar variable
+    Scalar(vcd::Value),
+    /// A `b0000 a` change to a vector variable
+    Vector(vcd::Vector),
+    /// A `r1.234 a` change to a real variable
+    Real(f64),
+    /// A `sSTART a` change to a string variable
+    String(String),
+}*/
 
 /// A format of the PDG that allows for storage and export of additional information.
 #[derive(Debug, Serialize, Deserialize, Clone)]

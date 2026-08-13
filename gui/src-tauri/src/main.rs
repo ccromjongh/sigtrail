@@ -11,6 +11,6 @@ use anyhow::Result;
 
 fn main() -> Result<()> {
     pretty_env_logger::init();
-    chiseltrace_lib::run()?;
+    sigtrail_lib::run()?;
     Ok(())
 }

@@ -4,7 +4,7 @@ use clap::Parser;
 use anyhow::Result;
 use tauri::Manager;
 use app_state::{AppState, PDGConfig};
-use chiseltrace_rs::graphbuilder::LanguageMode;
+use sigtrail_rs::graphbuilder::LanguageMode;
 use graph_building::make_dpdg;
 use graph_interaction::{get_n_timeslots, get_partial_graph, toggle_module, set_new_head, reset_head, open_vs_code};
 
@@ -47,7 +47,7 @@ pub fn run() -> Result<()> {
     });
 
     let config = state.pdg_config.as_ref().unwrap();
-    let window_title = format!("ChiselTrace – {} – {:?} – {:?}", config.top_module, config.criterion, config.language_mode);
+    let window_title = format!("SigTrail – {} – {:?} – {:?}", config.top_module, config.criterion, config.language_mode);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

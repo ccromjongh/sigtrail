@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "chiseltrace-rs",
+    "sigtrail-rs",
     "cli",
     "gui/src-tauri"
 ]
