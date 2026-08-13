@@ -1,17 +1,23 @@
 use std::{collections::HashSet, fs::{read_to_string, File}, io::BufWriter, path::Path};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use chiseltrace_rs::{conversion::{dpdg_make_exportable, pdg_convert_to_source}, graphbuilder::GraphProcessingType, slicing::{pdg_slice, write_dynamic_slice, write_static_slice}, util::parse_criterion};
-use chiseltrace_rs::graphbuilder::{GraphBuilder, CriterionType};
-use chiseltrace_rs::pdg_spec::PDGSpec;
-use chiseltrace_rs::sim_data_injection::TywavesInterface;
+use sigtrail_rs::{conversion::{dpdg_make_exportable, pdg_convert_to_source}, graphbuilder::GraphProcessingType, slicing::{pdg_slice, write_dynamic_slice, write_static_slice}, util::parse_criterion};
+use sigtrail_rs::graphbuilder::{GraphBuilder, CriterionType, LanguageMode};
+use sigtrail_rs::pdg_spec::PDGSpec;
+use sigtrail_rs::sim_data_injection::TywavesInterface;
 use serde::Deserialize;
+
+extern crate pretty_env_logger;
+#[macro_use] extern crate log;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[command(subcommand)]
     command: Commands,
+    /// Used to configure behaviour and expected paths based on the source language of the circuit.
+    #[arg(short, long, default_value = "Chisel",)]
+    language: LanguageMode,
 }
 
 #[derive(Subcommand, Debug)]
@@ -30,7 +36,7 @@ enum Commands {
     DynPDG {
         /// The path to the input PDG
         pdg_path: String,
-        /// The path the the VCD file
+        /// The path to the VCD file
         vcd_path: String,
         /// Path to the HGLDD directory
         hgldd_path: String,
@@ -41,22 +47,23 @@ enum Commands {
         )]
         slice_criterion: CriterionType,
         /// Maximum amount of timesteps
+        #[arg(long)]
         max_timesteps: Option<u64>,
         /// The name of the top-level module
         top_module: String,
 
         /// Specifies additional scopes that will be used while processing.
-        #[clap(value_delimiter = ' ', num_args = 1..)]
+        #[clap(long, value_delimiter = ' ', num_args = 1..)]
         extra_scopes: Option<Vec<String>>,
 
-        #[clap(default_value = "dynpdg.json")]
+        #[clap(long, default_value = "dynpdg.json")]
         output_path: String,
     },
     
     DynSlice {
         /// The path to the input PDG
         pdg_path: String,
-        /// The path the the VCD file
+        /// The path to the VCD file
         vcd_path: String,
         /// The statement that should be used for the program slicing.
         #[arg(
@@ -69,7 +76,7 @@ enum Commands {
         max_timesteps: Option<u64>,
         /// Specifies additional scopes that will be used while processing.
         #[clap(long, value_delimiter = ' ', num_args = 1..)]
-        extra_scopes: Option<Vec<String>>,
+        extra_scopes: Vec<String>,
 
         #[clap(long, default_value = "dynslice.json")]
         output_path: String,
@@ -84,6 +91,8 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
+    println!("SigTrail CLI");
+    pretty_env_logger::init();
     let args = Args::parse();
     let argpath = match &args.command {
         Commands::Slice { path, .. } => path,
@@ -116,23 +125,36 @@ fn main() -> Result<()> {
             // write_pdg(&sliced, "out_pdg.json")?;
             // println!("{:#?}", args);
 
-            println!("Starting dynamic PDG building");
-            let mut builder = GraphBuilder::new(vcd_path, extra_scopes.clone().unwrap_or(vec![]), sliced)?;
+            let resolved_scopes = extra_scopes.clone().unwrap_or_else(|| match args.language {
+                LanguageMode::Chisel | LanguageMode::FIR => { vec!["TOP".into(), "svsimTestbench".into(), "dut".into()] }
+                LanguageMode::SpinalHDL => { vec!["TOP".into(), top_module.clone()] }
+            });
+
+            info!("Starting dynamic PDG building");
+            let mut builder = GraphBuilder::new(vcd_path, resolved_scopes.clone(), sliced, args.language.clone())?;
             let dpdg = builder.process(&slice_criterion, max_timesteps, GraphProcessingType::Normal)?;
 
-            println!("Making DPDG exportable");
+            info!("Making DPDG exportable");
             let dpdg = dpdg_make_exportable(dpdg);
             
-            println!("Converting to source representation");
-            let mut converted_pdg = pdg_convert_to_source(dpdg, false, true);
+            info!("Converting to source representation");
+            // Convert from FIRRTL to Chisel source language representation unless FIR or other mode is used
+            let mut converted_pdg = if let LanguageMode::Chisel = args.language {
+                pdg_convert_to_source(dpdg, false, true)
+            } else {
+                dpdg
+            };
 
-            println!("Adding tywaves info");
-            let tywaves = TywavesInterface::new(Path::new(hgldd_path),
-                vec!["TOP".into(), "svsimTestbench".into(), "dut".into()], &top_module)?;
-            
-            let tywaves_vcd_path = tywaves.vcd_rewrite(Path::new(vcd_path))?;
-            println!("VCD rewritten");
-            tywaves.inject_sim_data(&mut converted_pdg, &tywaves_vcd_path)?;
+            info!("Adding tywaves info");
+            let tywaves = TywavesInterface::new(Path::new(hgldd_path), resolved_scopes.clone(), &top_module)?;
+
+            let final_vcd_path = if let LanguageMode::Chisel = args.language {
+                &tywaves.vcd_rewrite(Path::new(vcd_path))?
+            } else {
+                vcd_path
+            };
+            info!("VCD rewritten");
+            tywaves.inject_sim_data(&mut converted_pdg, &final_vcd_path, &resolved_scopes, args.language)?;
 
             let mut lines = HashSet::new();
             for vert in &converted_pdg.vertices {
@@ -140,8 +162,8 @@ fn main() -> Result<()> {
                     lines.insert((vert.file.clone(), vert.line));
                 }
             }
-            println!("Unique source lines in DPDG: {}", lines.len());
-            println!("Num verts: {}, num edges: {}", converted_pdg.vertices.len(), converted_pdg.edges.len());
+            info!("Unique source lines in DPDG: {}", lines.len());
+            info!("Num verts: {}, num edges: {}", converted_pdg.vertices.len(), converted_pdg.edges.len());
     
             let f = File::create(&output_path)?;
             let writer = BufWriter::new(f);
@@ -151,8 +173,8 @@ fn main() -> Result<()> {
             let sliced  = pdg_raw;
             let max_timesteps = max_timesteps.map(|x| x as i64);
 
-            println!("Starting dynamic PDG building");
-            let mut builder = GraphBuilder::new(vcd_path, extra_scopes.clone().unwrap_or(vec![]), sliced)?;
+            info!("Starting dynamic PDG building");
+            let mut builder = GraphBuilder::new(vcd_path, extra_scopes.clone(), sliced, args.language.clone())?;
             let dpdg = builder.process(&slice_criterion, max_timesteps.clone(), GraphProcessingType::Full)?;
 
             write_dynamic_slice(&dpdg, output_path)?;

@@ -10,6 +10,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 use anyhow::Result;
 
 fn main() -> Result<()> {
-    chiseltrace_lib::run()?;
+    pretty_env_logger::init();
+    sigtrail_lib::run()?;
     Ok(())
 }

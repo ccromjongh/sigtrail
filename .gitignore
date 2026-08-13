@@ -5,3 +5,4 @@
 !/gui/**/*.json
 *.zip
 /tmp
+.idea

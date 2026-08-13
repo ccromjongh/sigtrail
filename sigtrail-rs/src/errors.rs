@@ -5,7 +5,7 @@ use tywaves_rs::hgldd;
 pub enum Error {
     #[error("Invalid slicing statement: {0}")]
     StatementLookupError(String),
-    #[error("Clock signal not found")]
+    #[error("Clock signal not found, check the language mode, top module and/or extra scopes")]
     ClockNotFoundError,
     #[error("Variable \"{0}\" not found")]
     VariableNotFoundError(String),

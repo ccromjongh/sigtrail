@@ -5,9 +5,11 @@ use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
 
 use tywaves_rs::{hgldd, tyvcd::{builder::{GenericBuilder, TyVcdBuilder}, spec::{Variable, VariableKind}, trace_pointer::TraceFinder}};
 use anyhow::Result;
+use log::{debug, error};
 use vcd::{Command, IdCode};
 
 use crate::{errors::Error, pdg_spec::{ExportablePDG, ExportablePDGNode}};
+use crate::graphbuilder::LanguageMode;
 
 pub struct TywavesInterface {
     builder: TyVcdBuilder<hgldd::spec::Hgldd>,
@@ -125,7 +127,7 @@ impl TywavesInterface {
             // Struct and vector get traversed using the field path
             VariableKind::Struct { fields } | VariableKind::Vector { fields } => {
                 let Some(field_str) = field_path.get(0) else {
-                    println!("Something has gone terribly wrong! (no field, but still struct left)");
+                    error!("Something has gone terribly wrong! (no field, but still struct left)");
                     return None;
                 };
 
@@ -144,8 +146,8 @@ impl TywavesInterface {
                     let new_field_path = &field_path[1..];
                     self.translate_variable_field(f, field_val, new_field_path, Some(&f.high_level_info.type_name))
                 } else {
-                    println!("Something has gone terribly wrong! (field not found) {}", field_str);
-                    println!("{:?}", fields.iter().map(|f| f.name.clone()).collect::<Vec<_>>());
+                    error!("Something has gone terribly wrong! (field not found) {}", field_str);
+                    error!("{:?}", fields.iter().map(|f| f.name.clone()).collect::<Vec<_>>());
                     None
                 }
             }
@@ -162,22 +164,30 @@ impl TywavesInterface {
     // select based on the field path
     // 3) Add the information to the node
 
-    pub fn inject_sim_data(&self, pdg: &mut ExportablePDG, vcd_path: impl AsRef<Path>) -> Result<()> {
+    pub fn inject_sim_data(&self, pdg: &mut ExportablePDG, vcd_path: impl AsRef<Path>, scopes: &Vec<String>, language_mode: LanguageMode) -> Result<()> {
         let file = File::open(vcd_path)?;
         let reader = BufReader::new(file);
         let mut parser = vcd::Parser::new(reader);
         let header = parser.parse_header()?;
 
-        let signal_mapping = build_signal_map(&header);
+        let signal_mapping = build_signal_map(&header, scopes);
 
         let mut node_map: HashMap<i64, Vec<&mut ExportablePDGNode>> = HashMap::new();
         for node in &mut pdg.vertices {
             node_map.entry(node.timestamp).or_default().push(node);
         }
 
-        let top_path: Vec<String> = vec!["TOP".into(), "svsimTestbench".into(), "dut".into()];
+        let top_path = scopes;
+        // let top_path: Vec<String> = match language_mode {
+        //     LanguageMode::Chisel | LanguageMode::FIR => { vec!["TOP".into(), "svsimTestbench".into(), "dut".into()] }
+        //     LanguageMode::SpinalHDL => { vec!["TOP".into()] }
+        // };
 
-        let clock = header.find_var(&["TOP", "svsimTestbench", "dut", "clock"]).ok_or(Error::ClockNotFoundError)?.code;
+        let clock_path: &[&str] = match language_mode {
+            LanguageMode::Chisel | LanguageMode::FIR => { &["TOP", "svsimTestbench", "dut", "clock"] }
+            LanguageMode::SpinalHDL => { &["TOP", "clk"] }
+        };
+        let clock = header.find_var(clock_path).ok_or(Error::ClockNotFoundError)?.code;
         
         // The rewritten VCD is a bit weird. It's best to squash all the changes (keep only the last one) for each timestep
         // (needs hashmap). Then on the timestamp after a clock cycle, update the global hashmap and add the values to the nodes
@@ -192,7 +202,7 @@ impl TywavesInterface {
             let command = command?;
             match command {
                 Command::Timestamp(t) => {
-                    // println!("Timestamp: {t}, current time: {current_timestamp}");
+                    debug!("Timestamp: {t}, current time: {current_timestamp}");
                     // Update the global hashmap with the changes
                     if rising_edge_found {
                         if current_timestamp < 0 {
@@ -221,10 +231,14 @@ impl TywavesInterface {
                                         tywaves_variable_cache.get(&hier_path).unwrap()
                                     };
                                     // let ty_var = self.find_signal(&hier_path).ok();
-                                    // println!("{:#?}", ty_var);
-                                    if let (Some(value), Some(tywaves_signal)) = (values_cache.get(&related_signal.signal_path), ty_var)  {
-                                        let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
-                                        node.sim_data =  self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
+                                    debug!("{:#?}", ty_var);
+                                    if let Some(value) = values_cache.get(&related_signal.signal_path)  {
+                                        if let Some(tywaves_signal) = ty_var {
+                                            let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
+                                            node.sim_data = self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
+                                        } else {
+                                            node.sim_data = Some(value.clone());
+                                        }
                                     }
                                 }
                             }
@@ -234,8 +248,8 @@ impl TywavesInterface {
                         cycle_changes.clear();
                     } else {
                         // We need to determine the exact signal changes that occurred on the falling edge and put
-                        // println!("{current_timestamp}");
-                        // println!("{:#?}", cycle_changes);
+                        debug!("{current_timestamp}");
+                        debug!("{:#?}", cycle_changes);
                         for (k,v) in &cycle_changes {
                             let Some(signals) = signal_mapping.get(k) else {
                                 continue;
@@ -263,10 +277,14 @@ impl TywavesInterface {
                                         tywaves_variable_cache.get(&hier_path).unwrap()
                                     };
 
-                                    // println!("{:#?}", ty_var);
-                                    if let (Some(value), Some(tywaves_signal)) = (values_cache.get(&related_signal.signal_path), ty_var)  {
-                                        let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
-                                        node.sim_data =  self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
+                                    debug!("{:#?}", ty_var);
+                                    if let Some(value) = values_cache.get(&related_signal.signal_path)  {
+                                        if let Some(tywaves_signal) = ty_var {
+                                            let path_parts = related_signal.field_path.split(".").collect::<Vec<_>>();
+                                            node.sim_data = self.translate_variable_field(&tywaves_signal, &value, &path_parts, None);
+                                        } else {
+                                            node.sim_data = Some(value.clone());
+                                        }
                                     }
                                 }
                             }
@@ -274,16 +292,25 @@ impl TywavesInterface {
                         cycle_changes.clear();
                     }
                 }
+                // This case is used for the Chisel language mode, where the clock signal is emitted as a [0:0] vector
                 Command::ChangeVector(i, v) if i == clock => {
                     let new_clock_val  = v.get(0).unwrap();
                     if clock_val == vcd::Value::V0 && new_clock_val == vcd::Value::V1 {
-                        // println!("Rising edge");
+                        debug!("Rising edge (vector)");
                         rising_edge_found = true;
                     }
                     clock_val = new_clock_val;
                 }
+                // For FIR and SpinalHDL, the clock signal is emitted as a scalar
+                Command::ChangeScalar(i, v) if i == clock => {
+                    if clock_val == vcd::Value::V0 && v == vcd::Value::V1 {
+                        debug!("Rising edge (scalar)");
+                        rising_edge_found = true;
+                    }
+                    clock_val = v;
+                }
                 Command::ChangeVector(i, v) => {
-                    // println!("Change in {:?}: {v}", i);
+                    debug!("Change in {:?}: {v}", i);
                     cycle_changes.insert(i, v);
                     // if let Some(probes) = self.probes.get(&i) {
                     //     for probe in probes {
@@ -301,9 +328,9 @@ impl TywavesInterface {
 }
 
 /// Build a map of IdCode -> Hierarchical signal name
-fn build_signal_map(header: &vcd::Header) -> HashMap<IdCode, Vec<String>> {
+fn build_signal_map(header: &vcd::Header, scopes: &Vec<String>) -> HashMap<IdCode, Vec<String>> {
     let mut signals = HashMap::new();
-    if let Some(dut) = header.find_scope(&["TOP", "svsimTestbench", "dut"]) {
+    if let Some(dut) = header.find_scope(scopes) {
         let mut stack = vec![];
         stack.extend_from_slice(&dut.items.iter().map(|i| ("".to_string(), i)).collect::<Vec<_>>());
         while let Some((prefix, item)) = stack.pop() {

@@ -1,26 +1,28 @@
-# ChiselTrace: Automatic Signal Dependency Tracing for Chisel
+# SigTrail: Automatic Signal Dependency Tracing for Chisel and SpinalHDL
 
-This repository contains the ChiselTrace project. ChiselTrace is a source-level debugging tool for the Chisel hardware construction language. By automatically analysing and visualising simulation-time data- and control-flow dependencies between statements in the Chisel source code, ChiselTrace aims to reduce the amount of time spent tracing back faults to the root cause in the waveform viewer, thereby improving the Chisel debugging experience.
+> This repository contains the SigTrail project, a fork of the original [ChiselTrace](https://github.com/jarlb/chiseltrace) project.
 
-ChiselTrace builds on the [Tywaves](https://github.com/rameloni/tywaves-chisel) project, a typed waveform viewer for Chisel. ChiselTrace implements the following stages:
+SigTrail is a source-level debugging tool for the Chisel and SpinalHDL hardware generator languages (HGLs). By automatically analysing and visualising simulation-time data- and control-flow dependencies between statements in the HGL source code, SigTrail aims to reduce the amount of time spent tracing back faults to the root cause in the waveform viewer, thereby improving the debugging experience of circuits written in these HGLs.
 
-- A Chisel extension that extracts a program dependence graph and a control flow graph from a FIRRTL circuit, while inserting instrumentation probes.
+SigTrail builds on the [Tywaves](https://github.com/rameloni/tywaves-chisel) project, a typed waveform viewer for Chisel. SigTrail implements the following stages:
 
-- A Rust library (chiseltrace-rs) that takes the produced graphs and synthesises this information, along with a VCD file and CIRCT debug information, into a dynamic program dependence graph (only dependencies that occurred in the simulation) that is annotated with typed Tywaves simulation data.
+- An extension for Chisel and SpinalHDL that extracts a program dependence graph and a control flow graph from a circuit. During this process, instrumentation probes are inserted to track active dependencies after simulation.
+
+- A Rust library (sigtrail-rs) that takes the produced graphs and synthesises this information, along with a VCD file and Tywaves signal type info, into a dynamic program dependence graph (only dependencies that occurred in the simulation) that is annotated with typed Tywaves simulation data.
 
 - A graph viewer front-end that enables interactive dependency exploration
 
-- An extension to ChiselSim to automatically launch ChiselTrace on failed assertions.
+- An extension to ChiselSim to automatically launch SigTrail on failed assertions.
 
-![An example of ChiselTrace](/img/example1.png)
+![An example of SigTrail](/img/example1.png)
 
 ## Installation
 
-Build instructions are provided for Linux only. Although ChiselTrace may work under Windows, it has only been tested on Linux.
+Build instructions are provided for Linux only. SigTrail runs on Windows as well, but since simulation of the circuits is likely done on Linux, it is not recommended.
 
 ### Dependencies
 
-To install ChiselTrace, Tywaves also needs to be installed. While it is technically possible to use ChiselTrace without Tywaves-Surfer, this is not recommended. Please make sure to install the [Tywaves prerequisites](https://github.com/jarlb/tywaves-chisel/tree/main?tab=readme-ov-file#prerequisites). For convenience, they are listed here as well:
+To install SigTrail, Tywaves also needs to be installed. While it is technically possible to use SigTrail without Tywaves-Surfer, this is not recommended. Please make sure to install the [Tywaves prerequisites](https://github.com/jarlb/tywaves-chisel/tree/main?tab=readme-ov-file#prerequisites). For convenience, they are listed here as well:
 
 > - [Make](https://www.gnu.org/software/make/)
 > - [Scala and sbt](https://docs.scala-lang.org/getting-started/sbt-track/getting-started-with-scala-and-sbt-on-the-command-line.html)
@@ -31,17 +33,17 @@ To install ChiselTrace, Tywaves also needs to be installed. While it is technica
   gui ([instructions](https://gitlab.com/rameloni/surfer-tywaves-demo#compiling-from-source))
 > - [Verilator](https://www.veripool.org/projects/verilator/wiki/Installing) (recommended `v4.228+`)
 
-In addition, ChiselTrace depends on Tauri. Please install [all of its prerequisites](https://v2.tauri.app/start/prerequisites/) and run the following command:
+In addition, SigTrail depends on Tauri. Please install [all of its prerequisites](https://v2.tauri.app/start/prerequisites/) and run the following command:
 
 ```bash
 cargo install tauri-cli --version "^2.0.0" --locked
 ```
 
-This will enable you to build the ChiselTrace executable.
+This will enable you to build the SigTrail executable.
 
-### Installing ChiselTrace Components
+### Installing SigTrail Components
 
-To install Tywaves and ChiselTrace, run the `make all` command. This will automatically pull all required repositories and install all required components.
+To install Tywaves and SigTrail, run the `make all` command. This will automatically pull all required repositories and install all required components.
 
 To remove temporary files, run `make clean`.
 
@@ -57,9 +59,12 @@ This section shows some frequently encountered errors.
 
 ## Getting Started
 
-Before proceeding, make sure the ChiselTrace main executable (the GUI) is on your `$PATH`.
+> [!NOTE]
+> These instructions are for ChiselTrace and reference the [Chisel fork](https://github.com/jarlb/chisel) and the simulator in the [TywavesChisel](https://github.com/jarlb/tywaves-chisel) fork. SpinalHDL instructions will be added later.
 
-There are two main ways to use ChiselTrace: via the command line, or via a custom ChiselSim simulator. This section will provide instructions for both cases, using the following example circuit.
+Before proceeding, make sure the SigTrail main executable (the GUI) is on your `$PATH`.
+
+There are two main ways to use SigTrail: via the command line, or via a custom ChiselSim simulator. This section will provide instructions for both cases, using the following example circuit.
 
 ```scala
 class GCD extends Module {
@@ -91,7 +96,7 @@ class GCD extends Module {
 }
 ```
 
-We will first discuss how to use the custom simulator. ChiselTrace's custom simulator is based on the one found in Tywaves. A regular Tywaves simulation would be launched using a unit test as follows:
+We will first discuss how to use the custom simulator. SigTrail's custom simulator is based on the one found in Tywaves. A regular Tywaves simulation would be launched using a unit test as follows:
 
 ```scala
 describe("TywavesSimulator") {
@@ -145,9 +150,9 @@ Now, if an assertion were to fail (which, in this case it will, due to the 13 in
 > continue? (Y/n/t/dt)
 ```
 
-Choosing `Y` or `n` will continue or fail the unit test. By selecting `t` or `dt`, you can intiate a ChiselTrace session on the asserted signal. `t` will do a full traceback, while `dt` will only trace data dependencies.
+Choosing `Y` or `n` will continue or fail the unit test. By selecting `t` or `dt`, you can intiate a SigTrail session on the asserted signal. `t` will do a full traceback, while `dt` will only trace data dependencies.
 
-ChiselTrace may also be invoked manually via the terminal command `chiseltrace`. You should use the following arguments:
+SigTrail may also be invoked manually via the terminal command `sigtrail`. You should use the following arguments:
 
 ```text
   -s, --slice-criterion <SLICE_CRITERION>
@@ -180,7 +185,7 @@ ChiselTrace may also be invoked manually via the terminal command `chiseltrace`.
 For the GCD example, the command could look like this:
 
 ```bash
-chiseltrace --slice-criterion signal:io.result --pdg-path ./pdg.json --vcd-path ./path_to_vcd/trace.vcd --hgldd-path ./path_to_hgldd --top-module GCD --extra-scopes TOP svsimTestbench dut --max-timesteps 16
+sigtrail --slice-criterion signal:io.result --pdg-path ./pdg.json --vcd-path ./path_to_vcd/trace.vcd --hgldd-path ./path_to_hgldd --top-module GCD --extra-scopes TOP svsimTestbench dut --max-timesteps 16
 ```
 
 ## Features
@@ -202,30 +207,30 @@ chiseltrace --slice-criterion signal:io.result --pdg-path ./pdg.json --vcd-path 
   - Hover-over to display file and source code associated with Chisel statement
   - Typed tywaves simulation data shown as data-flow on edges + on hover menu.
   - Hierarchical node grouping and graph-head resetting to reduce graph complexity.
-  - Automatically launches ChiselTrace session upon failing assertions.
+  - Automatically launches SigTrail session upon failing assertions.
 
 
 ## Case-study
 
-The functionality of ChiselTrace has been demonstrated on [this version ChiselWatt](https://github.com/jarlb/chiselwatt), which contains a fault injected into one of the modules. This version is based on a [ChiselWatt version](https://github.com/rameloni/chiselwatt/tree/migrate-to-chiselsim) that has been updated to work with newer Chisel versions. More details can be found in the results of the ChiselTrace paper.
+The functionality of SigTrail has been demonstrated on [this version ChiselWatt](https://github.com/jarlb/chiselwatt), which contains a fault injected into one of the modules. This version is based on a [ChiselWatt version](https://github.com/rameloni/chiselwatt/tree/migrate-to-chiselsim) that has been updated to work with newer Chisel versions. More details can be found in the results of the SigTrail paper.
 
 ![ChiselWatt example](./img/chiseltrace_chiselwatt_graph.png)
 
 ## Future Work
 
-- Improve the Chisel reconstruction from DPDGs in FIRRTL representation. The reconstruction stage of ChiselTrace sometimes fails to reconstruct an accurate Chisel view for nodes, especially if higher-level standard library constructs are involved. Methods that could solve this issue could consist of more heuristic graph processing in the reconstruction stage, and switching to different FIRRTL source-mappings that map to a specific Chisel statement instead of a location in the source code.
+- Improve the Chisel reconstruction from DPDGs in FIRRTL representation. The reconstruction stage of SigTrail sometimes fails to reconstruct an accurate Chisel view for nodes, especially if higher-level standard library constructs are involved. Methods that could solve this issue could consist of more heuristic graph processing in the reconstruction stage, and switching to different FIRRTL source-mappings that map to a specific Chisel statement instead of a location in the source code.
 - Extend the functionality to work on multiple clock-domains and allow registers to use any signal as clock or reset. This would involve changes in the information that needs to be collected from the FIRRTL circuit and changes in the DPDG building process. 
-- Integrate the ChiselTrace library with the Tywaves-Surfer waveform viewer to enable automatically adding signals to the waveform viewer that are dependencies of a particular transition. Furthermore, this could enable jumping to the location of an active driver of a signal in the source code.
+- Integrate the SigTrail library with the Tywaves-Surfer waveform viewer to enable automatically adding signals to the waveform viewer that are dependencies of a particular transition. Furthermore, this could enable jumping to the location of an active driver of a signal in the source code.
 - Add more graph processing to the front-end. One improvement could be automatically tracing a value to its root cause. Another interesting addition would be automatically calculating the difference between the DPDG under a test that produces wrong results versus a test that executes correctly.
-- Create alternative front-ends for ChiselTrace, such as a Visual Studio Code extension. Such an extension could enable a user to jump to the active driver of a signal, similar to how a jump to definition works.
+- Create alternative front-ends for SigTrail, such as a Visual Studio Code extension. Such an extension could enable a user to jump to the active driver of a signal, similar to how a jump to definition works.
 - Enable user-defined abstractions for data-flow. An example of this could be a communication transaction between components. An abstracted view could show only one data dependency for the entire transaction.
-- Extend ChiselTrace to other HGLs. The ChiselTrace front-end and chiseltrace-rs could be partially reused for an implementation for another language. One big challenge would be to come up with an alternative way to process at the FIRRTL level, as not all languages translate to a similar IR before compilation.
+- Extend SigTrail to other HGLs. The SigTrail front-end and sigtrail-rs could be partially reused for an implementation for another language. One big challenge would be to come up with an alternative way to process at the FIRRTL level, as not all languages translate to a similar IR before compilation.
 
 ## Citation
 
 If you want to refer to this work, please refer to the following publication:
 
-J. Brand, C. Cromjongh, H.P. Hofstee, Z. Al-Ars, "ChiselTrace: Typed Behavioral Debugging in Chisel Through Signal Dependency Tracing", IEEE Nordic Circuits and Systems Conference, 2025
+J. Brand, C. Cromjongh, H.P. Hofstee, Z. Al-Ars, "SigTrail: Typed Behavioral Debugging in Chisel Through Signal Dependency Tracing", IEEE Nordic Circuits and Systems Conference, 2025
 
 ## License
 

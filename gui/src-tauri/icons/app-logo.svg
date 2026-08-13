@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <g pointer-events="all">
+    <polygon points="4.5 11.5 7.125 8 4.5 4.5 7.25 4.5 9.875 8 7.25 11.5 4.5 11.5" fill="#fff"/>
+    <path d="M7,5l2.25,3-2.25,3h-1.5l1.8-2.4.45-.6-.45-.6-1.8-2.4h1.5ZM7.5,4H3.5l3,4-3,4h4l3-4-3-4h0Z" fill="#231f20"/>
+  </g>
+  <circle cx="2.5" cy="8" r="2" pointer-events="all" fill="none" stroke="#ed1c24"/>
+  <circle cx="13.5" cy="8" r="2" pointer-events="all" fill="none" stroke="#006eff"/>
+</svg>
