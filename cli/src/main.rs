@@ -103,7 +103,8 @@ fn main() -> Result<()> {
     let buf = read_to_string(argpath)?;
     let mut deser = serde_json::Deserializer::from_str(buf.as_str());
     deser.disable_recursion_limit();
-    let pdg_raw = PDGSpec::deserialize(&mut deser)?;
+    let pdg_raw = PDGSpec::deserialize(&mut deser)
+        .map_err(|e| anyhow::anyhow!("Failed to parse PDG JSON file: {}", e))?;
 
     match &args.command {
         Commands::Slice { slice_criterion, output_path, .. } => {

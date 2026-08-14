@@ -102,38 +102,20 @@ pub struct CFGSpecStatement {
     pub true_branch: Option<Vec<CFGSpecStatement>>,
     #[serde(default)]
     pub false_branch: Option<Vec<CFGSpecStatement>>,
-}
-
-/*#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CFGSpecStatement2 {
-    pub stmt_ref: u32,
-    #[serde(default)]
-    pub pred_stmt_ref: Option<u32>,
     #[serde(default)]
     pub branches: Option<Vec<CFGBranchStatement>>,
+    #[serde(default)]
+    pub default_branch: Option<Vec<CFGSpecStatement>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CFGBranchStatement {
     #[serde(default)]
-    pub match_values: Vec<BranchMatchValue>,
+    pub match_values: Vec<String>,
     #[serde(default)]
-    pub branch_stmts: Option<Vec<CFGSpecStatement>>,
+    pub stmts: Vec<CFGSpecStatement>,
 }
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub enum BranchMatchValue {
-    /// A 0a change to a scalar variable
-    Scalar(vcd::Value),
-    /// A `b0000 a` change to a vector variable
-    Vector(vcd::Vector),
-    /// A `r1.234 a` change to a real variable
-    Real(f64),
-    /// A `sSTART a` change to a string variable
-    String(String),
-}*/
 
 /// A format of the PDG that allows for storage and export of additional information.
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -50,7 +50,8 @@ pub async fn make_dpdg(state: State<'_, RwLock<AppState>>) -> Result<(), String>
             let reader = BufReader::new(File::open(&pdg_config.pdg_path)?);
             let mut deser = serde_json::Deserializer::from_reader(reader);
             deser.disable_recursion_limit();
-            let pdg_raw = PDGSpec::deserialize(&mut deser)?;
+            let pdg_raw = PDGSpec::deserialize(&mut deser)
+                .map_err(|e| anyhow::anyhow!("Failed to parse PDG JSON file: {}", e))?;
             info!("Processing PDG with {} nodes and {} edges", pdg_raw.vertices.len(), pdg_raw.edges.len());
             let sliced = pdg_raw;
 

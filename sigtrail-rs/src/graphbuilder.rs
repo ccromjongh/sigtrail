@@ -1,7 +1,8 @@
 use std::{cell::RefCell, collections::{HashMap, HashSet}, fs::File, io::{self, BufReader}, path::Path, rc::Rc};
+use std::fmt::{Display, Formatter};
 use itertools::Itertools;
 use serde::Serialize;
-use vcd::{Command as Command, IdCode};
+use vcd::{Command as Command, IdCode, Value, Vector};
 use anyhow::Result;
 use log::{debug, info};
 use crate::{pdg_spec::{PDGSpec, PDGSpecEdge, PDGSpecEdgeKind, PDGSpecNode, PDGSpecNodeKind}, errors::Error};
@@ -16,7 +17,7 @@ pub struct GraphBuilder {
     /// PDG nodes with bidirectional adjacency lists for efficient traversal
     linked_nodes: Vec<Rc<RefCell<PDGNode>>>,
     /// Current values of predicate variables (control flow conditions)
-    pred_values: HashMap<IdCode, bool>,
+    pred_values: HashMap<IdCode, SimulationValue>,
     /// Maps predicate indices to their VCD ID codes
     pred_idx_to_id: Vec<IdCode>,
     /// Tracks the most recent node that assigned to each signal/variable
@@ -45,10 +46,29 @@ struct VcdReader {
 }
 
 /// Represents a signal value change in the VCD trace.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct ValueChange {
     id: vcd::IdCode,
-    value: vcd::Value,
+    value: SimulationValue,
+}
+
+#[derive(Debug, Clone)]
+enum SimulationValue {
+    Scalar(vcd::Value),
+    Vector(vcd::Vector),
+    Real(f64),
+    String(String),
+}
+
+impl Display for SimulationValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SimulationValue::Scalar(s) => {s.fmt(f)}
+            SimulationValue::Vector(v) => {v.fmt(f)}
+            SimulationValue::Real(r) => {r.fmt(f)}
+            SimulationValue::String(s) => {s.fmt(f)}
+        }
+    }
 }
 
 /// Static PDG node enriched with adjacency lists for efficient graph traversal.
@@ -349,7 +369,7 @@ impl GraphBuilder {
     fn init_predicates(&mut self) -> Result<()> {
         for pred in &self.pdg.predicates {
             let pred_id = self.reader.find_var(&pred.name)?;
-            self.pred_values.insert(pred_id, false);
+            self.pred_values.insert(pred_id, SimulationValue::Scalar(vcd::Value::X));
             self.pred_idx_to_id.push(pred_id);
             debug!("Initialized predicate: {} ↔ {} @ {}:{}", pred_id, pred.name, pred.file, pred.line);
         }
@@ -364,7 +384,7 @@ impl GraphBuilder {
         // Update predicate values based on signal changes
         for change in changes {
             if let Some(v) = self.pred_values.get_mut(&change.id) {
-                *v = change.value == vcd::Value::V1;
+                *v = change.value.clone();
             }
         }
 
@@ -380,14 +400,34 @@ impl GraphBuilder {
             // Follow conditional branches based on predicate values
             if let Some(pred) = node.pred_stmt_ref {
                 let pred_id = self.pred_idx_to_id[pred as usize];
-                let pred_active = self.pred_values[&pred_id];
-                debug!("Predicate {} {} is {} @ {}:{}", pred_id, self.pdg.predicates[pred as usize].name, if pred_active { "active" } else { "inactive" }, self.pdg.predicates[pred as usize].file, self.pdg.predicates[pred as usize].line);
+                let pred_value = self.pred_values[&pred_id].clone();
+                let pred_active = match pred_value {
+                    SimulationValue::Scalar(v) => {
+                        let active = v == vcd::Value::V1;
+                        debug!("Predicate {} {} is {} @ {}:{}", pred_id, self.pdg.predicates[pred as usize].name, if active { "active" } else { "inactive" }, self.pdg.predicates[pred as usize].file, self.pdg.predicates[pred as usize].line);
+                        active
+                    }
+                    _ => false
+                };
                 if pred_active {
                     if let Some(t_branch) = node.true_branch {
                         stack.extend(t_branch.into_iter().rev());
                     }
                 } else if let Some(f_branch) = node.false_branch {
                     stack.extend(f_branch.into_iter().rev());
+                }
+                if let Some(branches) = node.branches {
+                    let pred_value_string = pred_value.to_string();
+                    debug!("Predicate {} {} is {} @ {}:{}", pred_id, self.pdg.predicates[pred as usize].name, pred_value_string, self.pdg.predicates[pred as usize].file, self.pdg.predicates[pred as usize].line);
+                    let active_branches = branches.into_iter().filter(|b| b.match_values.iter().any(|v| *v == pred_value_string));
+                    let mut has_active_branch = false;
+                    for branch in active_branches {
+                        stack.extend(branch.stmts.into_iter().rev());
+                        has_active_branch = true;
+                    }
+                    if !has_active_branch && let Some(default_branch) = node.default_branch {
+                        stack.extend(default_branch.into_iter().rev());
+                    }
                 }
             }
         }
@@ -516,7 +556,7 @@ impl VcdReader {
                             info!("Probe change: {} = {}", probe, unsigned_v);
                         }
                     } else {
-                        self.changes_buffer.push(ValueChange { id: i, value: v });
+                        self.changes_buffer.push(ValueChange { id: i, value: SimulationValue::Scalar(v) });
                     }
                 }
                 Command::ChangeVector(i, v) => {
@@ -524,6 +564,8 @@ impl VcdReader {
                         for probe in probes {
                             self.probe_change_buffer.push((probe.clone(), bitvector_to_unsigned(&v)));
                         }
+                    } else {
+                        self.changes_buffer.push(ValueChange { id: i, value: SimulationValue::Vector(v) });
                     }
                 }
                 _ => ()
